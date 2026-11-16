@@ -1,0 +1,870 @@
+Personal Media Manager
+
+Project specification
+Prompt completo – Architettura, sviluppo MVP e roadmap
+Obiettivo: progettare e sviluppare un’applicazione web per catalogazione, ricerca, gestione e individuazione dei duplicati di fotografie e video distribuiti su più dispositivi e archivi fisici.
+Testo pronto da copiare in Antigravity
+Copia riferimento
+1. Ruolo e modalità di lavoro
+Agisci come un team multidisciplinare composto da:
+* Senior Software Architect;
+* Senior Full Stack Developer;
+* Python Backend Developer;
+* React Frontend Developer;
+* Database Designer;
+* UX/UI Designer;
+* Software Tester.
+Il tuo compito è progettare e sviluppare un’applicazione software completa, mantenibile, modulare e potenzialmente distribuibile ad altri utenti.
+Non devi limitarti a produrre un prototipo dimostrativo o una semplice interfaccia grafica. L’obiettivo è costruire un prodotto realmente funzionante, con un’architettura solida e una progressione di sviluppo controllata.
+Devi adottare un approccio incrementale:
+* Analizzare i requisiti.
+* Verificare la fattibilità delle componenti tecniche più delicate.
+* Definire l’architettura.
+* Implementare una prima versione funzionante.
+* Testare il comportamento.
+* Documentare le decisioni.
+* Procedere con le funzionalità successive.
+Non implementare tutto in un’unica soluzione.
+Prima di sviluppare una funzionalità, verifica che le fondamenta necessarie siano state realizzate correttamente.
+Non inventare funzionalità, non introdurre dipendenze superflue e non semplificare arbitrariamente requisiti che incidono sul funzionamento del prodotto.
+Quando incontri una decisione architetturale non specificata:
+* valuta le alternative;
+* scegli inizialmente quella più semplice e sostenibile;
+* documenta la decisione;
+* evidenzia eventuali limitazioni;
+* chiedi il mio intervento soltanto quando la scelta modifica significativamente architettura, costi, sicurezza o funzionalità.
+Non chiedere conferma per ogni singola scelta tecnica ordinaria.
+2. Visione del prodotto
+Il progetto, denominato provvisoriamente Personal Media Manager, consiste in un’applicazione web per catalogare, esplorare e gestire archivi personali di fotografie e video.
+Il problema da risolvere è semplice ma concreto.
+Un utente può avere:
+* fotografie sul proprio smartphone;
+* fotografie trasferite negli anni su diversi hard disk;
+* copie dello stesso archivio su più dischi;
+* cartelle organizzate in modo differente;
+* file con nomi differenti ma contenuti identici;
+* immagini in formati e risoluzioni differenti;
+* video distribuiti tra dispositivi e cartelle;
+* archivi che non vengono collegati contemporaneamente.
+L’utente non dispone necessariamente di un catalogo unico che permetta di capire:
+* quali contenuti possiede;
+* dove si trovano;
+* quante copie esistono;
+* quali file sono duplicati;
+* quali contenuti sono presenti soltanto su una fonte;
+* quali fonti sono attualmente disponibili.
+Il software deve risolvere questo problema attraverso un catalogo centralizzato.
+Principio fondamentale
+Centralizzare le informazioni sui contenuti, non necessariamente i contenuti stessi.
+Gli originali devono rimanere nelle rispettive posizioni fisiche.
+L’applicazione deve indicizzare i file, estrarne le informazioni, calcolare le impronte digitali e generare miniature per la consultazione.
+Non deve essere necessario caricare tutti gli originali su un server centrale.
+Il catalogo deve essere in grado di rappresentare più copie fisiche dello stesso contenuto.
+Esempio:
+HARD DISK 1
+└── Foto/
+    └── Vacanze/
+        └── IMG_001.jpg
+
+HARD DISK 2
+└── Backup/
+    └── 2022/
+        └── DSC_9876.jpg
+
+MAC
+└── Archivio/
+    └── foto_001.jpg
+Anche se i nomi e i percorsi sono differenti, se i tre file hanno lo stesso contenuto binario devono essere riconosciuti come tre copie dello stesso elemento.
+L’utente deve poter vedere un unico elemento logico, con le informazioni relative alle tre copie fisiche.
+3. Obiettivi funzionali
+L’applicazione deve consentire di:
+* Collegare o rendere accessibili più fonti contenenti fotografie e video.
+* Selezionare cartelle direttamente dal browser.
+* Avviare la scansione senza installare software aggiuntivo.
+* Catalogare automaticamente i contenuti.
+* Estrarre metadati tecnici e informazioni EXIF.
+* Generare miniature leggere.
+* Calcolare hash crittografici.
+* Identificare duplicati esatti.
+* Consultare una galleria centralizzata.
+* Filtrare e cercare i contenuti.
+* Conoscere la posizione fisica di ogni copia.
+* Gestire fonti temporaneamente scollegate.
+* Riprendere scansioni interrotte.
+* Separare i cataloghi di utenti differenti.
+La prima versione deve concentrarsi sulla catalogazione, sulla consultazione e sull’identificazione dei duplicati esatti.
+Le funzionalità di gestione fisica dei file dovranno essere introdotte soltanto successivamente.
+4. Esperienza utente
+Uno degli aspetti più importanti del progetto è la semplicità.
+Il prodotto deve essere utilizzabile anche da persone che non hanno competenze informatiche.
+L’utente ideale non deve conoscere:
+* Python;
+* SQL;
+* Docker;
+* API;
+* filesystem;
+* configurazioni di rete;
+* architetture client-server.
+Deve poter utilizzare il prodotto attraverso un’interfaccia web intuitiva.
+4.1 Flusso principale
+Il flusso ideale è:
+* L’utente apre l’applicazione.
+* Accede al proprio account.
+* Seleziona “Aggiungi fonte”.
+* Assegna un nome alla fonte.
+* Seleziona una cartella o un archivio dal proprio dispositivo.
+* Avvia la scansione.
+* L’applicazione mostra l’avanzamento.
+* I file vengono catalogati.
+* Il catalogo viene aggiornato.
+* L’utente consulta fotografie, video e duplicati.
+Il processo deve essere comprensibile anche a chi non conosce il funzionamento tecnico del sistema.
+4.2 Esperienza desiderata
+L’interfaccia deve dare la sensazione di utilizzare un prodotto finito, non uno strumento per sviluppatori.
+Evitare:
+* schermate tecniche;
+* messaggi incomprensibili;
+* informazioni SQL;
+* percorsi API;
+* log grezzi;
+* configurazioni obbligatorie;
+* procedure manuali complesse.
+Le informazioni tecniche devono essere disponibili in un’area diagnostica separata.
+5. Architettura di scansione: requisito prioritario
+Questa è la parte tecnicamente più importante del progetto.
+La scansione deve poter avvenire direttamente dal browser, senza obbligare l’utente a installare un agente locale.
+Tuttavia, non devi dare per scontato che tutti i browser offrano le stesse funzionalità.
+Devi progettare un sistema che tenga conto delle limitazioni effettive delle API browser.
+5.1 Modalità principale: browser scanning
+L’utente deve poter selezionare una cartella tramite il browser.
+Valuta l’utilizzo di:
+* File System Access API;
+* showDirectoryPicker();
+* FileSystemDirectoryHandle;
+* FileSystemFileHandle;
+* API standard di selezione dei file;
+* attributo webkitdirectory come eventuale alternativa.
+La selezione deve essere esplicita e autorizzata dall’utente.
+Il browser dovrà:
+* Accedere ai file autorizzati.
+* Identificare le tipologie supportate.
+* Leggere le informazioni necessarie.
+* Calcolare gli hash.
+* Estrarre i metadati disponibili.
+* Generare miniature.
+* Trasmettere al backend i dati di catalogazione.
+Gli originali non devono essere trasferiti al server.
+Il trasferimento deve riguardare esclusivamente:
+* identificativi delle fonti;
+* percorsi relativi;
+* nomi;
+* dimensioni;
+* metadati;
+* hash;
+* miniature.
+5.2 Compatibilità browser
+Devi verificare concretamente il comportamento su:
+* Google Chrome;
+* Microsoft Edge;
+* Safari macOS;
+* Firefox.
+Non assumere che le API siano supportate allo stesso modo.
+Implementa un sistema di rilevamento delle funzionalità disponibili.
+Se il browser non supporta la selezione di directory tramite File System Access API, prevedi una modalità alternativa basata sulla selezione di file e cartelle, nei limiti consentiti dal browser.
+La UI deve comunicare chiaramente eventuali limitazioni.
+Non presentare come supportata una funzionalità che non è stata verificata.
+5.3 Prestazioni e memoria
+La scansione deve essere progettata per archivi di grandi dimensioni.
+Non caricare contemporaneamente tutti i file in memoria.
+Implementa:
+* elaborazione progressiva;
+* batch di dimensione controllata;
+* Web Workers per operazioni intensive;
+* aggiornamenti periodici dell’avanzamento;
+* gestione degli errori per singolo file;
+* ripresa delle scansioni interrotte;
+* limiti di concorrenza configurabili.
+Particolare attenzione al calcolo SHA-256.
+La Web Crypto API può richiedere la disponibilità dell’intero contenuto del file per il calcolo digest.
+Non utilizzare indiscriminatamente arrayBuffer() su video molto grandi o archivi pesanti.
+Valuta una libreria che supporti hashing incrementale a blocchi, verificandone affidabilità, manutenzione e prestazioni.
+Non introdurre una soluzione complessa senza prima misurare le prestazioni di una soluzione più semplice.
+5.4 Persistenza delle scansioni
+Il browser potrebbe essere chiuso o la connessione potrebbe interrompersi.
+La scansione deve essere suddivisa in unità di lavoro persistenti.
+Il backend deve poter registrare:
+* identificativo scansione;
+* fonte;
+* stato;
+* file individuati;
+* file elaborati;
+* file falliti;
+* ultimo avanzamento confermato;
+* data di inizio;
+* data di fine.
+La ripresa dovrà evitare duplicazioni di record.
+Non presumere che i permessi di accesso alle cartelle restino sempre disponibili dopo la chiusura del browser.
+Quando è necessario selezionare nuovamente la fonte, guidare l’utente con un messaggio comprensibile.
+6. Agente locale opzionale
+L’agente locale non è un requisito per il primo MVP.
+L’architettura deve tuttavia consentirne l’introduzione successiva.
+L’agente potrà essere utile per:
+* scansioni molto grandi;
+* archivi video pesanti;
+* browser incompatibili;
+* scansioni pianificate;
+* elaborazioni in background;
+* accesso diretto a dischi locali;
+* scansioni che devono proseguire senza browser aperto.
+L’agente dovrà poter comunicare con il backend attraverso API HTTPS autenticate.
+Non deve avere responsabilità applicative duplicate rispetto al backend.
+Il suo compito principale sarà leggere le fonti locali, elaborare i file e inviare i risultati al catalogo centrale.
+Progetta le API in modo che browser scanner e agente locale possano utilizzare lo stesso contratto di comunicazione.
+7. Fonti e dispositivi
+L’applicazione deve supportare più fonti per ogni utente.
+Una fonte rappresenta una cartella o un archivio fisico da catalogare.
+Esempi:
+* Hard disk esterno;
+* SSD;
+* chiavetta USB;
+* cartella locale;
+* cartella di rete;
+* archivio accessibile da un agente.
+Ogni fonte deve avere:
+* ID univoco;
+* nome;
+* descrizione opzionale;
+* tipologia;
+* dispositivo associato;
+* percorso originale;
+* data di registrazione;
+* data ultima scansione;
+* stato;
+* numero di file indicizzati.
+7.1 Stato delle fonti
+Prevedere almeno questi stati:
+* Online;
+* Offline;
+* Scansione in corso;
+* Scansione completata;
+* Scansione incompleta;
+* Errore.
+Una fonte offline non deve comportare la cancellazione delle informazioni già presenti nel catalogo.
+L’applicazione deve continuare a mostrare i contenuti precedentemente indicizzati, indicando che l’originale non è attualmente raggiungibile.
+7.2 Identificazione delle fonti
+Non utilizzare esclusivamente il percorso per identificare un disco.
+Un disco può essere collegato a dispositivi differenti e montato con percorsi differenti.
+Prevedere un identificativo persistente della fonte, quando disponibile.
+Per le scansioni browser, distinguere l’identità logica della fonte dall’identificativo temporaneo dell’handle browser.
+Non considerare un nuovo percorso come una fonte completamente diversa senza prima verificare se si tratta di una fonte già registrata.
+8. Catalogazione dei contenuti
+L’applicazione deve supportare almeno:
+Fotografie
+* JPEG;
+* JPG;
+* PNG;
+* HEIC;
+* HEIF;
+* TIFF;
+* WebP;
+* GIF;
+* BMP.
+Video
+* MP4;
+* MOV;
+* M4V;
+* AVI;
+* MKV;
+* altri formati comuni, se i metadati sono leggibili.
+La scansione deve poter registrare anche file di formato non supportato completamente, purché sia possibile identificare almeno nome, percorso e dimensione.
+8.1 Metadati
+Per ogni file raccogliere, quando disponibili:
+Campo	Descrizione
+File name	Nome originale
+Relative path	Percorso relativo alla fonte
+Extension	Estensione
+MIME type	Tipologia
+File size	Dimensione in byte
+Creation date	Data filesystem
+Modification date	Data modifica filesystem
+Capture date	Data di acquisizione
+Width	Larghezza
+Height	Altezza
+Duration	Durata video
+GPS latitude	Latitudine
+GPS longitude	Longitudine
+Camera make	Produttore fotocamera
+Camera model	Modello fotocamera
+Software	Software di elaborazione
+SHA-256	Hash del contenuto
+Non confondere:
+* data di creazione filesystem;
+* data di modifica;
+* data di acquisizione originale.
+Sono informazioni diverse.
+Non inventare o ricostruire date mancanti senza evidenza.
+I valori assenti devono essere gestiti correttamente.
+8.2 Metadati EXIF e video
+Valuta ExifTool per l’estrazione completa dei metadati, specialmente per il futuro agente locale.
+Per la modalità browser, verifica quali metadati possano essere estratti direttamente con JavaScript e quali richiedano librerie aggiuntive.
+Il sistema deve poter funzionare anche quando alcuni metadati non sono disponibili.
+La mancanza di EXIF non deve impedire la catalogazione.
+9. Sistema di identificazione dei duplicati
+Questa funzionalità è uno degli elementi centrali del prodotto.
+Non basare mai l’identificazione dei duplicati sul solo nome del file.
+9.1 Duplicati esatti
+Utilizzare SHA-256.
+Due file con lo stesso hash devono essere considerati copie binariamente identiche, previa verifica della correttezza dell’elaborazione.
+Il sistema deve raggruppare le copie dello stesso contenuto logico.
+Esempio:
+CONTENUTO: IMG_001.JPG
+
+COPIA 1
+HDD Fotografico/2021/IMG_001.JPG
+
+COPIA 2
+Backup/Foto/IMG_987.JPG
+
+COPIA 3
+Archivio/Import/IMG_001.JPG
+L’interfaccia deve mostrare un unico elemento logico con tre copie fisiche.
+9.2 Duplicati non identici
+In una fase successiva utilizzare tecniche di similarità:
+* perceptual hash;
+* pHash;
+* dHash;
+* confronto delle dimensioni;
+* confronto visuale.
+Queste tecniche possono identificare:
+* immagini ridimensionate;
+* immagini ricompresse;
+* conversioni di formato;
+* versioni modificate;
+* fotografie molto simili.
+Non devono però produrre automaticamente equivalenze definitive.
+Una fotografia originale e una sua versione modificata potrebbero essere correlate ma non rappresentare lo stesso file.
+9.3 Distinzione tra duplicati e fotografie simili
+Prevedere tre categorie:
+* Duplicato esatto.
+* Versione equivalente o derivata.
+* Fotografia simile.
+Solo la prima categoria deve essere considerata certa nell’MVP.
+Non implementare riconoscimento facciale nella prima versione.
+10. Generazione e gestione miniature
+La consultazione non deve richiedere il caricamento degli originali.
+Generare miniature di dimensioni contenute.
+Orientamento iniziale:
+* lato maggiore di circa 300–400 pixel;
+* formato JPEG o WebP;
+* compressione adeguata;
+* rispetto dell’orientamento EXIF;
+* conservazione delle proporzioni.
+Le miniature devono essere generate una volta e conservate sul server.
+Non rigenerarle a ogni apertura della galleria.
+Il backend deve poter identificare quale miniatura corrisponde a quale contenuto.
+Prevedere una generazione progressiva, senza bloccare l’intera scansione per l’elaborazione delle anteprime.
+Per i video, valutare successivamente la generazione di un fotogramma rappresentativo.
+La generazione delle miniature non deve alterare gli originali.
+11. Interfaccia utente
+La UI deve essere moderna, pulita, professionale e soprattutto orientata alla consultazione visuale.
+Non deve sembrare un pannello amministrativo o un semplice file manager.
+Prendi ispirazione da applicazioni di gestione fotografica moderne, ma realizza un’identità visiva originale.
+Non copiare layout, marchi o elementi proprietari di altri prodotti.
+11.1 Struttura generale
+Prevedere una sidebar con:
+* Dashboard;
+* Libreria;
+* Fotografie;
+* Video;
+* Duplicati;
+* Fonti;
+* Scansioni;
+* Impostazioni.
+La navigazione deve essere coerente tra le sezioni.
+11.2 Dashboard
+La dashboard deve contenere:
+* totale fotografie;
+* totale video;
+* numero di fonti;
+* numero di copie;
+* numero di duplicati;
+* spazio complessivo indicizzato;
+* stato delle fonti;
+* ultime scansioni.
+Utilizzare card informative e grafici solo quando migliorano effettivamente la comprensione.
+11.3 Libreria
+La libreria è la schermata principale.
+Deve consentire di visualizzare i contenuti in una griglia di miniature.
+Funzionalità:
+* ordinamento per data;
+* ordinamento per nome;
+* ordinamento per dimensione;
+* filtro per tipologia;
+* filtro per fonte;
+* filtro per intervallo temporale;
+* ricerca;
+* caricamento progressivo;
+* paginazione o virtualizzazione.
+Non caricare migliaia di immagini contemporaneamente nel DOM.
+Utilizzare una virtualized grid se necessario.
+11.4 Dettaglio contenuto
+Selezionando una fotografia, mostrare:
+* anteprima;
+* nome;
+* formato;
+* dimensione;
+* risoluzione;
+* data di acquisizione;
+* modello fotocamera;
+* posizione GPS, se presente;
+* hash;
+* numero di copie;
+* elenco delle fonti;
+* percorso di ogni copia;
+* stato di disponibilità.
+11.5 Duplicati
+Schermata dedicata ai gruppi di duplicati.
+Mostrare:
+* anteprima;
+* numero copie;
+* dimensioni;
+* percorsi;
+* fonti;
+* disponibilità.
+Prevedere un confronto chiaro tra le copie.
+Non inserire pulsanti di cancellazione nell’MVP.
+11.6 Scansioni
+Mostrare:
+* scansioni attive;
+* scansioni completate;
+* scansioni fallite;
+* avanzamento;
+* numero di file elaborati;
+* numero di errori;
+* durata;
+* possibilità di riprendere una scansione interrotta, se tecnicamente possibile.
+Gli errori devono essere presentati in linguaggio comprensibile.
+12. Modello dati e database
+Progetta un database relazionale con separazione chiara tra contenuto logico e copie fisiche.
+La struttura deve poter supportare più utenti e più fonti.
+Entità iniziali:
+Users
+Account degli utenti.
+Campi indicativi:
+* id;
+* email;
+* password_hash;
+* created_at;
+* updated_at.
+Devices
+Dispositivi dai quali vengono gestite o scansionate le fonti.
+Campi indicativi:
+* id;
+* user_id;
+* name;
+* type;
+* created_at;
+* last_seen_at.
+Sources
+Fonti di archiviazione.
+Campi indicativi:
+* id;
+* user_id;
+* device_id;
+* name;
+* source_type;
+* root_path;
+* persistent_identifier;
+* status;
+* created_at;
+* last_scanned_at.
+Media
+Rappresenta il contenuto logico.
+Campi indicativi:
+* id;
+* user_id;
+* media_type;
+* canonical_sha256;
+* created_at;
+* updated_at.
+Files
+Rappresenta ogni singola copia fisica.
+Campi indicativi:
+* id;
+* media_id;
+* source_id;
+* filename;
+* relative_path;
+* extension;
+* mime_type;
+* size_bytes;
+* modified_at;
+* captured_at;
+* width;
+* height;
+* duration;
+* metadata_json;
+* sha256;
+* availability_status;
+* created_at;
+* updated_at.
+Thumbnails
+* id;
+* media_id;
+* storage_path;
+* format;
+* width;
+* height;
+* created_at.
+ScanJobs
+* id;
+* source_id;
+* status;
+* total_files;
+* processed_files;
+* failed_files;
+* started_at;
+* completed_at;
+* last_checkpoint;
+* error_message.
+ScanHistory
+Registro degli eventi delle scansioni.
+12.1 Considerazioni importanti
+Non creare una nuova entità Media per ogni copia fisica.
+Due file con lo stesso hash devono poter essere collegati allo stesso contenuto logico.
+La struttura dovrà inoltre consentire che una stessa fotografia abbia versioni differenti.
+Prevedere:
+* indici sui campi utilizzati nelle ricerche;
+* vincoli di integrità;
+* foreign key;
+* transazioni;
+* migrazioni database;
+* gestione degli aggiornamenti.
+SQLite è sufficiente per il primo MVP.
+Non introdurre PostgreSQL senza una motivazione concreta.
+La migrazione futura deve comunque rimanere possibile.
+Prima di implementare il modello definitivo, produci uno schema ER e verifica che supporti correttamente:
+* utenti multipli;
+* fonti multiple;
+* copie fisiche multiple;
+* contenuti duplicati;
+* fonti offline;
+* scansioni incrementali;
+* versioni differenti dello stesso contenuto.
+13. Backend e API
+Utilizzare Python e FastAPI.
+Il backend deve essere organizzato per moduli e responsabilità.
+Struttura indicativa:
+backend/
+├── app/
+│   ├── main.py
+│   ├── core/
+│   │   ├── config.py
+│   │   ├── security.py
+│   │   └── database.py
+│   ├── models/
+│   ├── schemas/
+│   ├── api/
+│   ├── services/
+│   │   ├── catalog_service.py
+│   │   ├── source_service.py
+│   │   ├── scan_service.py
+│   │   ├── duplicate_service.py
+│   │   └── thumbnail_service.py
+│   ├── repositories/
+│   └── tests/
+└── requirements.txt
+Prevedere API REST per:
+* autenticazione;
+* gestione utenti;
+* gestione fonti;
+* avvio scansioni;
+* aggiornamento avanzamento;
+* registrazione file;
+* registrazione metadati;
+* ricerca contenuti;
+* consultazione duplicati;
+* gestione miniature;
+* stato delle scansioni.
+Tutte le API dovranno verificare che l’utente autenticato possa accedere alla risorsa richiesta.
+Non affidarti esclusivamente ai controlli effettuati dal frontend.
+La comunicazione tra scanner e backend dovrà prevedere invii a batch, idempotenza e gestione degli errori.
+Il backend non deve ricevere un singolo enorme payload contenente l’intero archivio.
+14. Frontend
+Utilizzare:
+* React;
+* TypeScript;
+* Vite.
+Organizzare il frontend per funzionalità.
+Struttura indicativa:
+frontend/
+├── src/
+│   ├── app/
+│   ├── components/
+│   ├── features/
+│   │   ├── dashboard/
+│   │   ├── library/
+│   │   ├── sources/
+│   │   ├── duplicates/
+│   │   ├── scans/
+│   │   └── auth/
+│   ├── hooks/
+│   ├── services/
+│   ├── types/
+│   ├── utils/
+│   └── styles/
+└── package.json
+Utilizzare TypeScript in maniera rigorosa.
+Evitare:
+* componenti eccessivamente grandi;
+* logica applicativa dentro i componenti grafici;
+* chiamate API duplicate;
+* stato globale non necessario;
+* codice ripetuto;
+* tipi any utilizzati senza motivazione.
+La gestione dello stato deve essere proporzionata alla complessità effettiva.
+Non introdurre librerie di stato globali se React Context e stato locale sono sufficienti.
+15. Sicurezza e privacy
+Il progetto dovrà essere progettato considerando che i contenuti catalogati possono essere fotografie personali e potenzialmente sensibili.
+Requisiti:
+* Autenticazione obbligatoria.
+* Password protette con algoritmi di hashing adeguati.
+* Separazione rigorosa dei dati tra utenti.
+* Autorizzazione su ogni API.
+* Comunicazioni HTTPS nelle installazioni remote.
+* Validazione dei dati ricevuti.
+* Protezione da accessi non autorizzati ai percorsi.
+* Gestione sicura dei token.
+* Nessuna esposizione pubblica delle miniature senza autorizzazione.
+* Nessun trasferimento degli originali senza esplicito consenso.
+Non salvare credenziali o segreti nel codice.
+Utilizzare variabili d’ambiente.
+Prevedere un file .env.example.
+Non utilizzare dati personali reali durante lo sviluppo.
+16. Distribuzione e portabilità
+Il prodotto deve poter essere installato su hardware differenti.
+L’architettura non deve essere vincolata a uno specifico Raspberry Pi o a una configurazione OMV.
+Prevedere Docker Compose per il deployment.
+Struttura indicativa:
+personal-media-manager/
+├── frontend/
+├── backend/
+├── agent/
+├── deployment/
+│   ├── docker-compose.yml
+│   └── config/
+├── docs/
+├── scripts/
+├── tests/
+├── .env.example
+└── README.md
+Il sistema dovrà poter funzionare:
+* su un computer locale;
+* su un Raspberry Pi sufficientemente dimensionato;
+* su un NAS compatibile;
+* su un server remoto;
+* eventualmente su una futura infrastruttura cloud.
+I dati applicativi dovranno essere separati dal codice.
+Prevedere directory configurabili per:
+* database;
+* miniature;
+* log;
+* backup;
+* configurazione.
+Non utilizzare percorsi assoluti specifici del mio ambiente.
+17. Vincoli di sviluppo
+Questi vincoli sono obbligatori.
+17.1 Non distruttività
+L’MVP deve essere esclusivamente read-only rispetto agli originali.
+Non implementare:
+* cancellazione automatica;
+* spostamento automatico;
+* rinomina automatica;
+* modifica degli originali;
+* compressione degli originali;
+* conversione degli originali.
+17.2 Modularità
+Separare:
+* frontend;
+* backend;
+* scanner;
+* database;
+* gestione miniature;
+* autenticazione;
+* servizi di catalogazione.
+Non creare un monolite difficile da mantenere.
+17.3 Semplicità tecnologica
+Non introdurre tecnologie complesse soltanto perché disponibili.
+Preferire soluzioni semplici, documentate e manutenibili.
+17.4 Qualità
+Ogni funzionalità deve avere:
+* codice leggibile;
+* gestione degli errori;
+* test;
+* documentazione minima;
+* comportamento prevedibile.
+17.5 Nessun dato inventato
+Durante lo sviluppo utilizzare dati di test chiaramente identificati.
+Non simulare scansioni completate o duplicati reali se non sono stati effettivamente elaborati.
+Non mostrare statistiche fittizie nella dashboard una volta collegato il backend.
+18. Roadmap operativa
+Lo sviluppo deve seguire queste milestone.
+Milestone 0 – Analisi e progettazione
+Prima di scrivere codice:
+* Analizza i requisiti.
+* Verifica le API browser disponibili.
+* Definisci le limitazioni di Chrome, Edge, Safari e Firefox.
+* Definisci il modello dati.
+* Definisci il flusso di scansione.
+* Definisci le API.
+* Disegna l’architettura.
+* Identifica i rischi tecnici.
+Produci:
+* docs/architecture.md;
+* docs/database.md;
+* docs/scanning.md;
+* docs/roadmap.md.
+Non iniziare lo sviluppo completo prima di aver chiarito questi punti.
+Milestone 1 – Prototipo scanner browser
+Questa è la prima milestone implementativa.
+Realizza una piccola applicazione funzionante che consenta di:
+* Selezionare una cartella.
+* Enumerare i file.
+* Identificare i formati supportati.
+* Leggere le dimensioni.
+* Calcolare SHA-256.
+* Estrarre alcuni metadati.
+* Generare miniature.
+* Mostrare i risultati.
+* Gestire file non leggibili.
+* Mostrare l’avanzamento.
+Non realizzare ancora tutta l’applicazione.
+Lo scopo è verificare che la componente più rischiosa sia realmente funzionante.
+Test obbligatori
+Testare almeno:
+* 100 immagini;
+* 1.000 immagini;
+* 5.000 immagini;
+* immagini di dimensioni differenti;
+* video di dimensioni differenti;
+* file senza EXIF;
+* file con nomi duplicati;
+* file con contenuti identici;
+* file con contenuti differenti.
+Misurare:
+* tempo di scansione;
+* memoria utilizzata, dove possibile;
+* tempo medio di elaborazione;
+* comportamento del browser;
+* percentuale di file elaborati correttamente.
+Testare separatamente Chrome e Safari.
+Non dichiarare la milestone completata se lo scanner funziona soltanto con pochi file di esempio.
+Milestone 2 – Backend e database
+Implementare:
+* database;
+* modelli;
+* migrazioni;
+* API;
+* autenticazione;
+* gestione utenti;
+* gestione fonti;
+* registrazione contenuti;
+* gestione scansioni.
+Collegare il prototipo scanner al backend.
+Verificare che le scansioni possano aggiornare il catalogo senza generare record duplicati.
+Milestone 3 – Interfaccia applicativa
+Realizzare:
+* login;
+* dashboard;
+* libreria;
+* galleria;
+* dettaglio file;
+* gestione fonti;
+* gestione scansioni;
+* schermata duplicati.
+La UI dovrà utilizzare esclusivamente dati reali provenienti dal backend.
+Milestone 4 – Duplicati e scansioni incrementali
+Implementare:
+* raggruppamento SHA-256;
+* copie fisiche;
+* aggiornamento dei file modificati;
+* gestione fonti offline;
+* riconciliazione dopo riconnessione;
+* ripresa delle scansioni.
+Milestone 5 – Agente opzionale
+Solo dopo aver validato l’esperienza browser, progettare e implementare l’agente locale.
+Milestone 6 – Distribuzione
+Preparare:
+* Docker Compose;
+* configurazione;
+* backup;
+* logging;
+* documentazione;
+* installazione;
+* aggiornamenti.
+19. Criteri di accettazione dell’MVP
+L’MVP sarà considerato completato soltanto quando:
+ID	Requisito	Condizione di accettazione
+AC01	Selezione cartella	L’utente può selezionare una cartella supportata
+AC02	Scansione	I file vengono enumerati correttamente
+AC03	Hash	SHA-256 viene calcolato correttamente
+AC04	Metadati	I metadati disponibili vengono registrati
+AC05	Miniature	Le miniature vengono generate e conservate
+AC06	Backend	I risultati vengono registrati nel database
+AC07	Idempotenza	Una seconda scansione non duplica i record
+AC08	Duplicati	File identici vengono raggruppati
+AC09	Fonti	Ogni copia conserva la propria posizione
+AC10	Offline	Le fonti scollegate restano nel catalogo
+AC11	Galleria	I contenuti sono consultabili
+AC12	Multiutente	Gli utenti non accedono ai cataloghi altrui
+AC13	Sicurezza	Gli originali non vengono modificati
+AC14	Errori	I file non leggibili non interrompono l’intera scansione
+AC15	Ripresa	Una scansione interrotta può essere ripresa senza duplicazioni
+20. Istruzioni specifiche per Antigravity
+Voglio che tu gestisca il progetto come uno sviluppo software professionale.
+Segui queste indicazioni durante tutto il lavoro.
+Prima di modificare il progetto:
+* verifica la struttura del repository;
+* verifica il codice già presente;
+* non sovrascrivere file senza averne compreso il contenuto;
+* mantieni una struttura coerente;
+* evita duplicazioni.
+Durante lo sviluppo:
+* procedi per milestone;
+* non implementare funzionalità future prematuramente;
+* testa ogni componente;
+* risolvi gli errori prima di procedere;
+* mantieni aggiornati i documenti;
+* utilizza nomi coerenti;
+* evita codice temporaneo lasciato nel progetto;
+* non simulare funzionalità non implementate.
+Quando completi una milestone:
+Fornisci un riepilogo con:
+* Cosa è stato realizzato.
+* File creati o modificati.
+* Architettura implementata.
+* Test eseguiti.
+* Risultati dei test.
+* Problemi ancora aperti.
+* Prossimo passo.
+Non dichiarare completata una funzionalità soltanto perché il codice è stato scritto: deve essere stata verificata.
+Quando incontri problemi tecnici:
+Non cercare di aggirarli con soluzioni improvvisate.
+Spiega il problema, proponi alternative e indica le conseguenze.
+Se una tecnologia non è adatta al requisito, proponi una soluzione alternativa prima di introdurla.
+21. Prima attività da eseguire
+Inizia esclusivamente dalla Milestone 0 e dalla preparazione della Milestone 1.
+Voglio che tu:
+* Analizzi l’intero progetto e i requisiti.
+* Definisca l’architettura tecnica.
+* Verifichi la fattibilità della scansione browser.
+* Identifichi le limitazioni di compatibilità.
+* Definisca il modello dati iniziale.
+* Definisca il protocollo di comunicazione tra scanner e backend.
+* Prepari il piano di test.
+* Realizzi il primo prototipo funzionante di scansione browser.
+Non sviluppare ancora tutta la piattaforma.
+La priorità assoluta è verificare il funzionamento della scansione browser su archivi reali e di dimensioni significative.
+Voglio un prototipo tecnicamente valido, non una demo estetica.
+Al termine, presenta i risultati dei test e le eventuali limitazioni prima di procedere alla milestone successiva.
+
