@@ -35,6 +35,11 @@ class MediaOut(BaseModel):
     duration_seconds: Optional[float] = None
     copies_count: int = 1
     has_thumbnail: bool = False
+    is_live_photo: bool = False
+    live_video_media_id: Optional[str] = None
+    dhash: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     primary_filename: Optional[str] = None
     primary_size_bytes: Optional[int] = None
     created_at: datetime

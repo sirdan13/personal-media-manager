@@ -64,6 +64,11 @@ def list_user_media(
             duration_seconds=media.duration_seconds,
             copies_count=copies_count,
             has_thumbnail=thumb_count > 0,
+            is_live_photo=bool(getattr(media, "is_live_photo", 0)),
+            live_video_media_id=getattr(media, "live_video_media_id", None),
+            dhash=getattr(media, "dhash", None),
+            latitude=getattr(media, "latitude", None),
+            longitude=getattr(media, "longitude", None),
             primary_filename=p_filename,
             primary_size_bytes=p_size,
             created_at=media.created_at
@@ -114,6 +119,13 @@ def get_media_detail(db: Session, user_id: str, media_id: str) -> MediaDetailOut
         duration_seconds=media.duration_seconds,
         copies_count=len(file_outs),
         has_thumbnail=has_thumb,
+        is_live_photo=bool(getattr(media, "is_live_photo", 0)),
+        live_video_media_id=getattr(media, "live_video_media_id", None),
+        dhash=getattr(media, "dhash", None),
+        latitude=getattr(media, "latitude", None),
+        longitude=getattr(media, "longitude", None),
+        primary_filename=file_outs[0].filename if file_outs else None,
+        primary_size_bytes=file_outs[0].size_bytes if file_outs else None,
         created_at=media.created_at,
         files=file_outs
     )

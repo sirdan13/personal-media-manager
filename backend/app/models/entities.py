@@ -83,6 +83,11 @@ class Media(Base):
     width = Column(Integer, nullable=True)
     height = Column(Integer, nullable=True)
     duration_seconds = Column(Float, nullable=True)
+    is_live_photo = Column(Integer, nullable=False, default=0)
+    live_video_media_id = Column(String(36), ForeignKey("media.id", ondelete="SET NULL"), nullable=True)
+    dhash = Column(String(16), nullable=True, index=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
     created_at = Column(DateTime, default=utc_now, nullable=False)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 

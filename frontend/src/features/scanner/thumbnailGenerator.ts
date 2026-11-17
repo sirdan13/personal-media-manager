@@ -114,10 +114,22 @@ async function generateVideoThumbnail(file: File): Promise<GeneratedThumbnail | 
       video.load();
     };
 
+    video.onloadedmetadata = () => {
+      // Seek to 0.5s or 10% of duration to capture a representative frame
+      const dur = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 1;
+      const targetTime = Math.min(0.5, dur * 0.1);
+      try {
+        video.currentTime = targetTime;
+      } catch {
+        // Fallback for browsers that don't allow seeking before loadeddata
+      }
+    };
+
     video.onloadeddata = () => {
-      // Seek to 1 second or 10% of duration to capture a representative frame
-      const targetTime = Math.min(1.0, video.duration > 0 ? video.duration * 0.1 : 0.5);
-      video.currentTime = targetTime;
+      if (video.currentTime === 0) {
+        const dur = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 1;
+        video.currentTime = Math.min(0.5, dur * 0.1);
+      }
     };
 
     video.onseeked = () => {
@@ -151,11 +163,11 @@ async function generateVideoThumbnail(file: File): Promise<GeneratedThumbnail | 
       resolve(undefined);
     };
 
-    // Timeout after 3s to not block scanner
+    // Timeout after 6s to not block scanner
     setTimeout(() => {
       cleanup();
       resolve(undefined);
-    }, 3000);
+    }, 6000);
 
     video.src = url;
   });

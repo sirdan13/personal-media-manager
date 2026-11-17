@@ -140,12 +140,55 @@ def process_scan_batch(
     job.failed_files = (job.failed_files or 0) + failed_count
     db.commit()
 
+    # Link any newly discovered Live Photo pairs
+    try:
+        link_live_photos_for_user(db, user_id)
+    except Exception as e:
+        print(f"Live photo linking warning: {e}")
+
     return ScanBatchResponse(
         processed=processed_count,
         new_media_created=new_media_count,
         duplicate_instances_associated=duplicate_instances_count,
         failed=failed_count
     )
+
+def link_live_photos_for_user(db: Session, user_id: str) -> int:
+    """Finds matching photo + .mov pairs in the same directory and links them as Live Photos."""
+    files = (
+        db.query(File, Media)
+        .join(Media, File.media_id == Media.id)
+        .filter(Media.user_id == user_id)
+        .all()
+    )
+
+    photos_by_key = {}
+    videos_by_key = {}
+
+    for f, m in files:
+        ext = (f.extension or "").lower()
+        dir_name = os.path.dirname(f.relative_path or "")
+        base_name = os.path.splitext(f.filename or "")[0].upper()
+        key = (f.source_id, dir_name, base_name)
+
+        if ext in {"heic", "jpg", "jpeg", "png", "dng"}:
+            photos_by_key[key] = m
+        elif ext in {"mov", "mp4"}:
+            videos_by_key[key] = m
+
+    linked_count = 0
+    for key, photo_media in photos_by_key.items():
+        if key in videos_by_key:
+            video_media = videos_by_key[key]
+            if photo_media.id != video_media.id:
+                photo_media.is_live_photo = 1
+                photo_media.live_video_media_id = video_media.id
+                linked_count += 1
+
+    if linked_count > 0:
+        db.commit()
+
+    return linked_count
 
 def save_thumbnail(db: Session, media_id: str, sha256: str, thumbnail_base64: str, profile: str = "balanced"):
     # Check if thumbnail already saved

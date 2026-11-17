@@ -169,6 +169,21 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
                         <strong>{data.duration_seconds}s</strong>
                       </div>
                     )}
+                    {data.is_live_photo && (
+                      <div style={{ gridColumn: 'span 2', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+                        <span style={{ color: '#64748b' }}>Funzionalità:</span>{' '}
+                        <span style={{
+                          background: 'rgba(236, 72, 153, 0.2)',
+                          color: '#ec4899',
+                          fontWeight: 700,
+                          fontSize: '11px',
+                          padding: '2px 8px',
+                          borderRadius: '4px'
+                        }}>
+                          Apple Live Photo (Foto + Video clip abbinati)
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 

@@ -283,6 +283,28 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' })
                   </div>
                 )}
 
+                {/* Live Photo badge */}
+                {media.is_live_photo && (
+                  <span style={{
+                    position: 'absolute',
+                    top: '8px',
+                    left: '8px',
+                    background: 'rgba(236, 72, 153, 0.9)',
+                    color: 'white',
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.5)',
+                    letterSpacing: '0.5px'
+                  }}>
+                    LIVE
+                  </span>
+                )}
+
                 {/* Multiple copies badge */}
                 {media.copies_count > 1 && (
                   <span style={{
