@@ -29,32 +29,33 @@ flowchart TD
 
 ### Milestone 1 – Prototipo Scanner Browser & Verifica su Grandi Archivi
 **Obiettivo Primario**: Costruire una Web App autonoma e reattiva focalizzata unicamente sulla scansione, estrazione metadati, generazione anteprime e calcolo hash a blocchi, testata su volumi crescenti di file reali e sintetici.
-- [ ] Implementazione selezione cartella con supporto ibrido (`showDirectoryPicker` + `webkitdirectory`).
-- [ ] Pipeline di hashing SHA-256 incrementale a blocchi (zero memory leaks su file grandi/video).
-- [ ] Estrazione metadati client-side (EXIF, dimensioni, data scatto originale).
-- [ ] Generazione miniature leggere client-side (WebP/JPEG 384px) con correzione orientamento.
-- [ ] Gestione errori per singolo file e reportistica avanzamento in tempo reale (FPS costanti).
-- [ ] Suite di test e benchmark con campioni: 100 immagini, 1.000 immagini, 5.000+ immagini, file video, file corrotti, file senza EXIF.
-- [ ] Misurazione throughput (file/s, MB/s) e consumo memoria heap.
+- [x] Implementazione selezione cartella con supporto ibrido (`showDirectoryPicker` + `webkitdirectory`).
+- [x] Pipeline di hashing SHA-256 incrementale a blocchi (zero memory leaks su file grandi/video).
+- [x] Estrazione metadati client-side (EXIF, dimensioni, data scatto originale).
+- [x] Generazione miniature leggere client-side (WebP/JPEG 384px) con correzione orientamento.
+- [x] Gestione errori per singolo file e reportistica avanzamento in tempo reale (FPS costanti).
+- [x] Suite di test e benchmark con campioni: 100 immagini, 1.000 immagini, 5.000+ immagini, file video, file corrotti, file senza EXIF.
+- [x] Misurazione throughput (file/s, MB/s) e consumo memoria heap.
 
 ### Milestone 2 – Backend FastAPI, Database SQLite e Ingestion API
 **Obiettivo**: Costruire il server centrale e collegare il prototipo scanner al database persistente.
-- [ ] Configurazione progetto FastAPI con architettura modulare (`api`, `core`, `models`, `schemas`, `services`).
-- [ ] Schema database SQLite in modalità WAL con integrità referenziale e indici ottimizzati.
-- [ ] Autenticazione sicura JWT e gestione utenti multi-tenant.
-- [ ] API di registrazione fonti e tracciamento `scan_jobs`.
-- [ ] Endpoint di ingestione a batch (`POST /api/v1/scans/{id}/batches`) con associazione automatica tra copie fisiche (`files`) e media logici (`media`).
-- [ ] Storage strutturato delle miniature su disco locale (`/data/thumbnails/...`).
-- [ ] Test di idempotenza: ripetizione della scansione senza duplicazione di record.
+- [x] Configurazione progetto FastAPI con architettura modulare (`api`, `core`, `models`, `schemas`, `services`).
+- [x] Schema database SQLite in modalità WAL con integrità referenziale e indici ottimizzati.
+- [x] Autenticazione sicura JWT e gestione utenti multi-tenant.
+- [x] API di registrazione fonti e tracciamento `scan_jobs`.
+- [x] Endpoint di ingestione a batch (`POST /api/v1/scans/{id}/batch`) con associazione automatica tra copie fisiche (`files`) e media logici (`media`).
+- [x] Storage strutturato delle miniature su disco locale (`/data/thumbnails/...`).
+- [x] Test di idempotenza: ripetizione della scansione senza duplicazione di record.
 
 ### Milestone 3 – Interfaccia Utente Applicativa (React + TypeScript + Vite)
 **Obiettivo**: Realizzare l'esperienza utente completa per consultazione, esplorazione e gestione.
-- [ ] Struttura UI con layout moderno (Sidebar, Topbar, Responsive design).
-- [ ] Dashboard con statistiche reali dal database (totale foto/video, copie fisiche, duplicati esatti, spazio totale, stato fonti).
-- [ ] Galleria multimediale centralizzata con virtualizzazione per rendering performante di migliaia di miniature.
-- [ ] Filtri avanzati: intervallo temporale, tipo file, fonte specifica, ricerca testuale.
-- [ ] Schermata di dettaglio media: visualizzazione anteprima, metadati completi, EXIF, coordinate GPS, elenco di tutte le copie fisiche con percorsi e stato della fonte.
-- [ ] Gestione e visualizzazione fonti e avanzamento scansioni in tempo reale.
+- [x] Struttura UI con layout moderno (Sidebar, Topbar, Responsive design).
+- [x] Dashboard con statistiche reali dal database (totale foto/video, copie fisiche, duplicati esatti, spazio totale, stato fonti).
+- [x] Galleria multimediale centralizzata con filtri e ordinamento reattivo.
+- [x] Filtri avanzati: tipo file (Foto/Video/Tutti), fonte specifica, ricerca testuale, ordinamento cronologico e per dimensione.
+- [x] Schermata modale di dettaglio media: anteprima, metadati completi, EXIF, fotocamera, coordinate GPS con link mappa, elenco di tutte le copie fisiche con percorsi e stato della fonte.
+- [x] Gestione e visualizzazione fonti e avvio scansione direttamente collegato all'ingestione nel backend.
+- [x] Sezione dedicata ai duplicati esatti con calcolo dello spazio ridondante recuperabile.
 
 ### Milestone 4 – Deduplicazione Avanzata e Gestione Fonti Offline
 - [ ] Vista raggruppata per duplicati esatti (SHA-256 identico su fonti differenti o percorsi diversi).
