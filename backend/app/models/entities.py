@@ -94,6 +94,8 @@ class Media(Base):
     user = relationship("User", back_populates="media")
     files = relationship("File", back_populates="media", cascade="all, delete-orphan")
     thumbnail = relationship("Thumbnail", back_populates="media", uselist=False, cascade="all, delete-orphan")
+    album_items = relationship("AlbumMedia", back_populates="media", cascade="all, delete-orphan")
+    media_tags = relationship("MediaTag", back_populates="media", cascade="all, delete-orphan")
 
     __table_args__ = (
         UniqueConstraint("user_id", "canonical_sha256", name="uq_user_canonical_sha256"),
@@ -172,3 +174,60 @@ class ScanHistory(Base):
     created_at = Column(DateTime, default=utc_now, nullable=False)
 
     scan_job = relationship("ScanJob", back_populates="history")
+
+class Album(Base):
+    __tablename__ = "albums"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(150), nullable=False)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+
+    user = relationship("User")
+    media_items = relationship("AlbumMedia", back_populates="album", cascade="all, delete-orphan")
+
+class AlbumMedia(Base):
+    __tablename__ = "album_media"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    album_id = Column(String(36), ForeignKey("albums.id", ondelete="CASCADE"), nullable=False, index=True)
+    media_id = Column(String(36), ForeignKey("media.id", ondelete="CASCADE"), nullable=False, index=True)
+    added_at = Column(DateTime, default=utc_now, nullable=False)
+
+    album = relationship("Album", back_populates="media_items")
+    media = relationship("Media", back_populates="album_items")
+
+    __table_args__ = (
+        UniqueConstraint("album_id", "media_id", name="uq_album_media"),
+    )
+
+class Tag(Base):
+    __tablename__ = "tags"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(50), nullable=False)
+    color = Column(String(20), nullable=False, default="#38bdf8")
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+
+    user = relationship("User")
+    media_tags = relationship("MediaTag", back_populates="tag", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_user_tag_name"),
+    )
+
+class MediaTag(Base):
+    __tablename__ = "media_tags"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    media_id = Column(String(36), ForeignKey("media.id", ondelete="CASCADE"), nullable=False, index=True)
+    tag_id = Column(String(36), ForeignKey("tags.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    media = relationship("Media", back_populates="media_tags")
+    tag = relationship("Tag", back_populates="media_tags")
+
+    __table_args__ = (
+        UniqueConstraint("media_id", "tag_id", name="uq_media_tag"),
+    )

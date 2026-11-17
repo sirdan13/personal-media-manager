@@ -5,6 +5,8 @@ from app.api.v1.scans import router as scans_router
 from app.api.v1.media import router as media_router
 from app.api.v1.duplicates import router as duplicates_router
 from app.api.v1.settings import router as settings_router
+from app.api.v1.albums import router as albums_router
+from app.api.v1.tags import router as tags_router
 
 api_router = APIRouter()
 api_router.include_router(auth_router)
@@ -13,3 +15,5 @@ api_router.include_router(scans_router)
 api_router.include_router(media_router)
 api_router.include_router(duplicates_router)
 api_router.include_router(settings_router)
+api_router.include_router(albums_router)
+api_router.include_router(tags_router)

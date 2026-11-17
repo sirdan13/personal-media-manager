@@ -129,6 +129,9 @@ export class ApiClient {
     mediaType?: string;
     sourceId?: string;
     search?: string;
+    albumId?: string;
+    tagId?: string;
+    monthKey?: string;
     sortBy?: string;
     offset?: number;
     limit?: number;
@@ -137,10 +140,86 @@ export class ApiClient {
     if (params.mediaType) q.set('media_type', params.mediaType);
     if (params.sourceId) q.set('source_id', params.sourceId);
     if (params.search) q.set('search', params.search);
+    if (params.albumId) q.set('album_id', params.albumId);
+    if (params.tagId) q.set('tag_id', params.tagId);
+    if (params.monthKey) q.set('month_key', params.monthKey);
     if (params.sortBy) q.set('sort_by', params.sortBy);
     if (params.offset !== undefined) q.set('offset', String(params.offset));
     if (params.limit !== undefined) q.set('limit', String(params.limit));
     return this.request<any[]>(`/media?${q.toString()}`);
+  }
+
+  public static async getTimeline() {
+    return this.request<{ month_key: string; year: number; month: number; count: number }[]>('/media/timeline');
+  }
+
+  public static async getMapMedia() {
+    return this.request<{
+      id: string;
+      latitude: number;
+      longitude: number;
+      primary_filename?: string;
+      captured_at?: string;
+      has_thumbnail: boolean;
+      media_type: string;
+    }[]>('/media/map');
+  }
+
+  // Albums & Tags
+  public static async getAlbums() {
+    return this.request<{ id: string; user_id: string; name: string; description?: string; created_at: string; media_count: number }[]>('/albums');
+  }
+
+  public static async createAlbum(name: string, description?: string) {
+    return this.request<any>('/albums', {
+      method: 'POST',
+      body: JSON.stringify({ name, description })
+    });
+  }
+
+  public static async deleteAlbum(albumId: string) {
+    return this.request<void>(`/albums/${albumId}`, { method: 'DELETE' });
+  }
+
+  public static async addMediaToAlbum(albumId: string, mediaIds: string[]) {
+    return this.request<{ status: string; added_count: number }>(`/albums/${albumId}/media`, {
+      method: 'POST',
+      body: JSON.stringify({ media_ids: mediaIds })
+    });
+  }
+
+  public static async removeMediaFromAlbum(albumId: string, mediaId: string) {
+    return this.request<{ status: string; removed: boolean }>(`/albums/${albumId}/media/${mediaId}`, {
+      method: 'DELETE'
+    });
+  }
+
+  public static async getTags() {
+    return this.request<{ id: string; user_id: string; name: string; color: string; created_at: string; media_count: number }[]>('/tags');
+  }
+
+  public static async createTag(name: string, color?: string) {
+    return this.request<any>('/tags', {
+      method: 'POST',
+      body: JSON.stringify({ name, color })
+    });
+  }
+
+  public static async deleteTag(tagId: string) {
+    return this.request<void>(`/tags/${tagId}`, { method: 'DELETE' });
+  }
+
+  public static async addMediaToTag(tagId: string, mediaIds: string[]) {
+    return this.request<{ status: string; added_count: number }>(`/tags/${tagId}/media`, {
+      method: 'POST',
+      body: JSON.stringify({ media_ids: mediaIds })
+    });
+  }
+
+  public static async removeMediaFromTag(tagId: string, mediaId: string) {
+    return this.request<{ status: string; removed: boolean }>(`/tags/${tagId}/media/${mediaId}`, {
+      method: 'DELETE'
+    });
   }
 
   public static async getMediaDetail(mediaId: string) {

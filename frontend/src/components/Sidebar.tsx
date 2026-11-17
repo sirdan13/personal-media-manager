@@ -8,7 +8,8 @@ import {
   HardDrive,
   Clock,
   Settings,
-  LogOut
+  LogOut,
+  MapPin
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -29,6 +30,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'library', label: 'Libreria', icon: Grid },
     { id: 'photos', label: 'Fotografie', icon: Image },
     { id: 'videos', label: 'Video', icon: Video },
+    { id: 'map', label: 'Mappa GPS', icon: MapPin },
     { id: 'duplicates', label: 'Duplicati', icon: Copy, badge: 'Smart' },
     { id: 'sources', label: 'Fonti & Dischi', icon: HardDrive },
     { id: 'scans', label: 'Scansioni', icon: Clock },

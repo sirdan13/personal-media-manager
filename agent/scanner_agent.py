@@ -151,6 +151,26 @@ class ScannerAgent:
                             except Exception:
                                 pass
 
+                    # Extract GPS Info
+                    try:
+                        gps_info = exif_data.get_ifd(0x8825)
+                        if gps_info:
+                            lat_val = gps_info.get(2)
+                            lat_ref = gps_info.get(1)
+                            lon_val = gps_info.get(4)
+                            lon_ref = gps_info.get(3)
+                            if lat_val and lat_ref and lon_val and lon_ref:
+                                def _to_deg(val, ref):
+                                    d = float(val[0])
+                                    m = float(val[1])
+                                    s = float(val[2])
+                                    res = d + (m / 60.0) + (s / 3600.0)
+                                    return -res if ref in ("S", "W") else res
+                                meta["latitude"] = _to_deg(lat_val, lat_ref)
+                                meta["longitude"] = _to_deg(lon_val, lon_ref)
+                    except Exception:
+                        pass
+
                 # Thumbnail generation
                 # Handle EXIF orientation first
                 try:

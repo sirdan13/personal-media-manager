@@ -9,6 +9,7 @@ import { DuplicatesView } from './features/duplicates/DuplicatesView';
 import { SourcesView } from './features/sources/SourcesView';
 import { ScansView } from './features/scans/ScansView';
 import { SettingsView } from './features/settings/SettingsView';
+import { MapView } from './features/map/MapView';
 import { TutorialModal } from './components/TutorialModal';
 
 export const App: React.FC = () => {
@@ -107,6 +108,10 @@ export const App: React.FC = () => {
 
           {currentTab === 'videos' && (
             <LibraryView initialType="video" />
+          )}
+
+          {currentTab === 'map' && (
+            <MapView />
           )}
 
           {currentTab === 'duplicates' && (

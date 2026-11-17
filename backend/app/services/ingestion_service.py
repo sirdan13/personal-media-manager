@@ -42,6 +42,9 @@ def process_scan_batch(
                 Media.canonical_sha256 == item.sha256
             ).first()
 
+            lat = item.metadata_json.get("latitude") if item.metadata_json else None
+            lon = item.metadata_json.get("longitude") if item.metadata_json else None
+
             if not media:
                 media_type = "video" if item.mime_type.startswith("video") else "image"
                 media = Media(
@@ -52,7 +55,9 @@ def process_scan_batch(
                     captured_at=item.captured_at,
                     width=item.width,
                     height=item.height,
-                    duration_seconds=item.duration_seconds
+                    duration_seconds=item.duration_seconds,
+                    latitude=lat,
+                    longitude=lon
                 )
                 db.add(media)
                 db.flush() # Flush to get media.id
@@ -66,6 +71,9 @@ def process_scan_batch(
                 if not media.width and item.width:
                     media.width = item.width
                     media.height = item.height
+                if media.latitude is None and lat is not None:
+                    media.latitude = lat
+                    media.longitude = lon
 
             # 2. Check if File record already exists for this source and path (Idempotency)
             existing_file = db.query(File).filter(

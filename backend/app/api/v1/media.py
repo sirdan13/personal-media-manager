@@ -4,11 +4,13 @@ from fastapi import APIRouter, Depends, Query, HTTPException, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.schemas.media import MediaOut, MediaDetailOut
+from app.schemas.media import MediaOut, MediaDetailOut, TimelineBucketOut, MapMediaOut
 from app.services.media_service import (
     list_user_media,
     get_media_detail,
-    get_dashboard_stats
+    get_dashboard_stats,
+    get_timeline_buckets,
+    get_map_media
 )
 from app.api.deps import get_current_user
 from app.models.entities import User, Thumbnail, Media
@@ -21,13 +23,27 @@ def get_media_list(
     media_type: Optional[str] = Query(None, description="Filtro per image o video"),
     source_id: Optional[str] = Query(None, description="Filtro per fonte specifica"),
     search: Optional[str] = Query(None, description="Ricerca nel nome file"),
+    album_id: Optional[str] = Query(None, description="Filtro per album"),
+    tag_id: Optional[str] = Query(None, description="Filtro per tag"),
+    month_key: Optional[str] = Query(None, description="Filtro per mese (YYYY-MM)"),
     sort_by: str = Query("date_desc", description="Ordinamento: date_desc, date_asc, name_asc, name_desc, size_desc, size_asc"),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    return list_user_media(db, current_user.id, media_type, source_id, search, sort_by, offset, limit)
+    return list_user_media(
+        db, current_user.id,
+        media_type=media_type,
+        source_id=source_id,
+        search=search,
+        album_id=album_id,
+        tag_id=tag_id,
+        month_key=month_key,
+        sort_by=sort_by,
+        offset=offset,
+        limit=limit
+    )
 
 @router.get("/dashboard/stats")
 def get_stats(
@@ -35,6 +51,20 @@ def get_stats(
     db: Session = Depends(get_db)
 ):
     return get_dashboard_stats(db, current_user.id)
+
+@router.get("/timeline", response_model=List[TimelineBucketOut])
+def get_timeline(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return get_timeline_buckets(db, current_user.id)
+
+@router.get("/map", response_model=List[MapMediaOut])
+def get_map(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return get_map_media(db, current_user.id)
 
 @router.get("/{media_id}", response_model=MediaDetailOut)
 def get_media(

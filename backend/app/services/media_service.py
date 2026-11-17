@@ -2,8 +2,11 @@ from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, asc
 from fastapi import HTTPException, status
-from app.models.entities import Media, File, Source, Thumbnail, ScanJob
-from app.schemas.media import MediaOut, MediaDetailOut, FileOut, DuplicateGroupOut
+from app.models.entities import Media, File, Source, Thumbnail, ScanJob, Album, AlbumMedia, Tag, MediaTag
+from app.schemas.media import (
+    MediaOut, MediaDetailOut, FileOut, DuplicateGroupOut,
+    TimelineBucketOut, MapMediaOut, MediaAlbumTagItem
+)
 
 def list_user_media(
     db: Session,
@@ -11,6 +14,9 @@ def list_user_media(
     media_type: Optional[str] = None,
     source_id: Optional[str] = None,
     search: Optional[str] = None,
+    album_id: Optional[str] = None,
+    tag_id: Optional[str] = None,
+    month_key: Optional[str] = None,
     sort_by: str = "date_desc",
     offset: int = 0,
     limit: int = 50
@@ -33,6 +39,19 @@ def list_user_media(
         
     if search:
         query = query.filter(File.filename.ilike(f"%{search}%"))
+
+    if album_id:
+        query = query.join(AlbumMedia, Media.id == AlbumMedia.media_id)\
+                     .filter(AlbumMedia.album_id == album_id)
+
+    if tag_id:
+        query = query.join(MediaTag, Media.id == MediaTag.media_id)\
+                     .filter(MediaTag.tag_id == tag_id)
+
+    if month_key:
+        query = query.filter(
+            func.strftime('%Y-%m', func.coalesce(Media.captured_at, Media.created_at)) == month_key
+        )
 
     query = query.group_by(Media.id)
 
@@ -108,6 +127,17 @@ def get_media_detail(db: Session, user_id: str, media_id: str) -> MediaDetailOut
 
     has_thumb = db.query(Thumbnail).filter(Thumbnail.media_id == media.id).first() is not None
 
+    # Fetch albums and tags for this media
+    album_rows = db.query(Album.id, Album.name)\
+                   .join(AlbumMedia, Album.id == AlbumMedia.album_id)\
+                   .filter(AlbumMedia.media_id == media.id).all()
+    media_albums = [MediaAlbumTagItem(id=a_id, name=a_name) for a_id, a_name in album_rows]
+
+    tag_rows = db.query(Tag.id, Tag.name, Tag.color)\
+                 .join(MediaTag, Tag.id == MediaTag.tag_id)\
+                 .filter(MediaTag.media_id == media.id).all()
+    media_tags = [MediaAlbumTagItem(id=t_id, name=t_name, color=t_color) for t_id, t_name, t_color in tag_rows]
+
     return MediaDetailOut(
         id=media.id,
         user_id=media.user_id,
@@ -127,8 +157,64 @@ def get_media_detail(db: Session, user_id: str, media_id: str) -> MediaDetailOut
         primary_filename=file_outs[0].filename if file_outs else None,
         primary_size_bytes=file_outs[0].size_bytes if file_outs else None,
         created_at=media.created_at,
-        files=file_outs
+        files=file_outs,
+        albums=media_albums,
+        tags=media_tags
     )
+
+def get_timeline_buckets(db: Session, user_id: str) -> List[TimelineBucketOut]:
+    month_expr = func.strftime('%Y-%m', func.coalesce(Media.captured_at, Media.created_at)).label("month_key")
+    rows = db.query(
+        month_expr,
+        func.count(Media.id).label("c")
+    ).filter(Media.user_id == user_id)\
+     .group_by("month_key")\
+     .order_by(desc("month_key")).all()
+
+    buckets = []
+    for m_key, count in rows:
+        if not m_key:
+            continue
+        try:
+            parts = m_key.split("-")
+            year = int(parts[0])
+            month = int(parts[1])
+        except (ValueError, IndexError):
+            continue
+        buckets.append(TimelineBucketOut(
+            month_key=m_key,
+            year=year,
+            month=month,
+            count=count
+        ))
+    return buckets
+
+def get_map_media(db: Session, user_id: str) -> List[MapMediaOut]:
+    rows = db.query(
+        Media,
+        func.count(Thumbnail.id).label("thumb_count"),
+        func.min(File.filename).label("primary_filename")
+    ).outerjoin(Thumbnail, Media.id == Thumbnail.media_id)\
+     .outerjoin(File, Media.id == File.media_id)\
+     .filter(
+         Media.user_id == user_id,
+         Media.latitude.isnot(None),
+         Media.longitude.isnot(None)
+     ).group_by(Media.id)\
+      .order_by(desc(Media.captured_at)).all()
+
+    results = []
+    for media, thumb_count, p_filename in rows:
+        results.append(MapMediaOut(
+            id=media.id,
+            latitude=float(media.latitude),
+            longitude=float(media.longitude),
+            primary_filename=p_filename,
+            captured_at=media.captured_at,
+            has_thumbnail=thumb_count > 0,
+            media_type=media.media_type
+        ))
+    return results
 
 def list_duplicate_groups(
     db: Session,

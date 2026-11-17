@@ -7,7 +7,10 @@ import {
   MapPin,
   HardDrive,
   ExternalLink,
-  FileText
+  FileText,
+  Folder,
+  Tag as TagIcon,
+  Plus
 } from 'lucide-react';
 
 interface MediaDetailModalProps {
@@ -20,6 +23,15 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Albums & Tags state
+  const [availableAlbums, setAvailableAlbums] = useState<any[]>([]);
+  const [availableTags, setAvailableTags] = useState<any[]>([]);
+  const [showNewAlbumInput, setShowNewAlbumInput] = useState(false);
+  const [newAlbumName, setNewAlbumName] = useState('');
+  const [showNewTagInput, setShowNewTagInput] = useState(false);
+  const [newTagName, setNewTagName] = useState('');
+  const [newTagColor, setNewTagColor] = useState('#38bdf8');
+
   useEffect(() => {
     if (!mediaId) {
       setData(null);
@@ -30,8 +42,14 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
       try {
         setLoading(true);
         setError(null);
-        const detail = await ApiClient.getMediaDetail(mediaId);
+        const [detail, albums, tags] = await Promise.all([
+          ApiClient.getMediaDetail(mediaId),
+          ApiClient.getAlbums().catch(() => []),
+          ApiClient.getTags().catch(() => [])
+        ]);
         setData(detail);
+        setAvailableAlbums(albums);
+        setAvailableTags(tags);
       } catch (err) {
         setError((err as Error).message || 'Impossibile caricare il dettaglio media');
       } finally {
@@ -43,6 +61,84 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
   }, [mediaId]);
 
   if (!mediaId) return null;
+
+  const handleAddMediaToAlbum = async (albumId: string) => {
+    if (!mediaId) return;
+    try {
+      await ApiClient.addMediaToAlbum(albumId, [mediaId]);
+      const updated = await ApiClient.getMediaDetail(mediaId);
+      setData(updated);
+    } catch (err) {
+      alert((err as Error).message);
+    }
+  };
+
+  const handleCreateAndAddAlbum = async () => {
+    if (!newAlbumName.trim() || !mediaId) return;
+    try {
+      const created = await ApiClient.createAlbum(newAlbumName.trim());
+      await ApiClient.addMediaToAlbum(created.id, [mediaId]);
+      setAvailableAlbums((prev) => [...prev, created]);
+      const updated = await ApiClient.getMediaDetail(mediaId);
+      setData(updated);
+      setNewAlbumName('');
+      setShowNewAlbumInput(false);
+    } catch (err) {
+      alert((err as Error).message);
+    }
+  };
+
+  const handleRemoveMediaFromAlbum = async (albumId: string) => {
+    if (!mediaId) return;
+    try {
+      await ApiClient.removeMediaFromAlbum(albumId, mediaId);
+      setData((prev: any) => ({
+        ...prev,
+        albums: prev?.albums?.filter((a: any) => a.id !== albumId) || []
+      }));
+    } catch (err) {
+      alert((err as Error).message);
+    }
+  };
+
+  const handleAddMediaToTag = async (tagId: string) => {
+    if (!mediaId) return;
+    try {
+      await ApiClient.addMediaToTag(tagId, [mediaId]);
+      const updated = await ApiClient.getMediaDetail(mediaId);
+      setData(updated);
+    } catch (err) {
+      alert((err as Error).message);
+    }
+  };
+
+  const handleCreateAndAddTag = async () => {
+    if (!newTagName.trim() || !mediaId) return;
+    try {
+      const created = await ApiClient.createTag(newTagName.trim(), newTagColor);
+      await ApiClient.addMediaToTag(created.id, [mediaId]);
+      setAvailableTags((prev) => [...prev, created]);
+      const updated = await ApiClient.getMediaDetail(mediaId);
+      setData(updated);
+      setNewTagName('');
+      setShowNewTagInput(false);
+    } catch (err) {
+      alert((err as Error).message);
+    }
+  };
+
+  const handleRemoveMediaFromTag = async (tagId: string) => {
+    if (!mediaId) return;
+    try {
+      await ApiClient.removeMediaFromTag(tagId, mediaId);
+      setData((prev: any) => ({
+        ...prev,
+        tags: prev?.tags?.filter((t: any) => t.id !== tagId) || []
+      }));
+    } catch (err) {
+      alert((err as Error).message);
+    }
+  };
 
   const formatBytes = (bytes?: number) => {
     if (!bytes) return '0 B';
@@ -233,6 +329,256 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
                         return null;
                       }
                     })()}
+                  </div>
+                </div>
+
+                {/* Virtual Albums Section */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <h4 style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Folder size={15} color="#38bdf8" />
+                      Album Virtuali ({data.albums?.length || 0})
+                    </h4>
+                    <button
+                      onClick={() => setShowNewAlbumInput(!showNewAlbumInput)}
+                      style={{
+                        background: 'transparent',
+                        border: '1px solid #334155',
+                        borderRadius: '4px',
+                        color: '#38bdf8',
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      <Plus size={12} /> Nuovo
+                    </button>
+                  </div>
+
+                  {showNewAlbumInput && (
+                    <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+                      <input
+                        type="text"
+                        placeholder="Nome nuovo album..."
+                        value={newAlbumName}
+                        onChange={(e) => setNewAlbumName(e.target.value)}
+                        style={{
+                          flex: 1,
+                          background: '#0f172a',
+                          border: '1px solid #334155',
+                          borderRadius: '6px',
+                          color: '#f8fafc',
+                          padding: '4px 8px',
+                          fontSize: '12px'
+                        }}
+                      />
+                      <button
+                        onClick={handleCreateAndAddAlbum}
+                        style={{
+                          background: '#0284c7',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          padding: '4px 10px',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Crea & Aggiungi
+                      </button>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                    {data.albums && data.albums.length > 0 ? (
+                      data.albums.map((alb: any) => (
+                        <span
+                          key={alb.id}
+                          style={{
+                            background: '#0f172a',
+                            border: '1px solid #38bdf8',
+                            color: '#38bdf8',
+                            borderRadius: '14px',
+                            padding: '3px 10px',
+                            fontSize: '12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                          }}
+                        >
+                          {alb.name}
+                          <button
+                            onClick={() => handleRemoveMediaFromAlbum(alb.id)}
+                            style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0 }}
+                          >
+                            <X size={12} />
+                          </button>
+                        </span>
+                      ))
+                    ) : (
+                      <span style={{ fontSize: '12px', color: '#64748b' }}>Nessun album assegnato</span>
+                    )}
+
+                    {/* Add to existing album dropdown */}
+                    {availableAlbums.filter((a) => !data.albums?.some((da: any) => da.id === a.id)).length > 0 && (
+                      <select
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            handleAddMediaToAlbum(e.target.value);
+                            e.target.value = '';
+                          }
+                        }}
+                        defaultValue=""
+                        style={{
+                          background: '#0f172a',
+                          border: '1px dashed #475569',
+                          borderRadius: '14px',
+                          color: '#94a3b8',
+                          padding: '3px 8px',
+                          fontSize: '11px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <option value="" disabled>+ Aggiungi ad album...</option>
+                        {availableAlbums
+                          .filter((a) => !data.albums?.some((da: any) => da.id === a.id))
+                          .map((a) => (
+                            <option key={a.id} value={a.id}>{a.name}</option>
+                          ))}
+                      </select>
+                    )}
+                  </div>
+                </div>
+
+                {/* Virtual Tags Section */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <h4 style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <TagIcon size={15} color="#ec4899" />
+                      Tag ({data.tags?.length || 0})
+                    </h4>
+                    <button
+                      onClick={() => setShowNewTagInput(!showNewTagInput)}
+                      style={{
+                        background: 'transparent',
+                        border: '1px solid #334155',
+                        borderRadius: '4px',
+                        color: '#ec4899',
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      <Plus size={12} /> Nuovo
+                    </button>
+                  </div>
+
+                  {showNewTagInput && (
+                    <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', alignItems: 'center' }}>
+                      <input
+                        type="text"
+                        placeholder="Nome nuovo tag..."
+                        value={newTagName}
+                        onChange={(e) => setNewTagName(e.target.value)}
+                        style={{
+                          flex: 1,
+                          background: '#0f172a',
+                          border: '1px solid #334155',
+                          borderRadius: '6px',
+                          color: '#f8fafc',
+                          padding: '4px 8px',
+                          fontSize: '12px'
+                        }}
+                      />
+                      <input
+                        type="color"
+                        value={newTagColor}
+                        onChange={(e) => setNewTagColor(e.target.value)}
+                        style={{ width: '28px', height: '28px', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                      />
+                      <button
+                        onClick={handleCreateAndAddTag}
+                        style={{
+                          background: '#ec4899',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          padding: '4px 10px',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Aggiungi
+                      </button>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                    {data.tags && data.tags.length > 0 ? (
+                      data.tags.map((t: any) => (
+                        <span
+                          key={t.id}
+                          style={{
+                            background: `${t.color || '#38bdf8'}22`,
+                            border: `1px solid ${t.color || '#38bdf8'}`,
+                            color: t.color || '#38bdf8',
+                            borderRadius: '14px',
+                            padding: '3px 10px',
+                            fontSize: '12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                          }}
+                        >
+                          #{t.name}
+                          <button
+                            onClick={() => handleRemoveMediaFromTag(t.id)}
+                            style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0 }}
+                          >
+                            <X size={12} />
+                          </button>
+                        </span>
+                      ))
+                    ) : (
+                      <span style={{ fontSize: '12px', color: '#64748b' }}>Nessun tag assegnato</span>
+                    )}
+
+                    {/* Add to existing tag dropdown */}
+                    {availableTags.filter((t) => !data.tags?.some((dt: any) => dt.id === t.id)).length > 0 && (
+                      <select
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            handleAddMediaToTag(e.target.value);
+                            e.target.value = '';
+                          }
+                        }}
+                        defaultValue=""
+                        style={{
+                          background: '#0f172a',
+                          border: '1px dashed #475569',
+                          borderRadius: '14px',
+                          color: '#94a3b8',
+                          padding: '3px 8px',
+                          fontSize: '11px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <option value="" disabled>+ Aggiungi tag...</option>
+                        {availableTags
+                          .filter((t) => !data.tags?.some((dt: any) => dt.id === t.id))
+                          .map((t) => (
+                            <option key={t.id} value={t.id}>#{t.name}</option>
+                          ))}
+                      </select>
+                    )}
                   </div>
                 </div>
 

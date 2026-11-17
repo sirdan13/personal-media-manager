@@ -46,8 +46,32 @@ class MediaOut(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+class MediaAlbumTagItem(BaseModel):
+    id: str
+    name: str
+    color: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
 class MediaDetailOut(MediaOut):
     files: List[FileOut] = []
+    albums: List[MediaAlbumTagItem] = []
+    tags: List[MediaAlbumTagItem] = []
+
+class TimelineBucketOut(BaseModel):
+    month_key: str
+    year: int
+    month: int
+    count: int
+
+class MapMediaOut(BaseModel):
+    id: str
+    latitude: float
+    longitude: float
+    primary_filename: Optional[str] = None
+    captured_at: Optional[datetime] = None
+    has_thumbnail: bool = False
+    media_type: str = "image"
+    model_config = ConfigDict(from_attributes=True)
 
 class DuplicateGroupOut(BaseModel):
     media_id: str

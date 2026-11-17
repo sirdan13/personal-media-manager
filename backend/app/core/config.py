@@ -2,6 +2,10 @@ import os
 from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_DEFAULT_DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data"))
+_DEFAULT_DB_PATH = os.path.join(_DEFAULT_DATA_DIR, "personal_media_manager.db")
+_DEFAULT_THUMBS_DIR = os.path.join(_DEFAULT_DATA_DIR, "thumbnails")
+
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Personal Media Manager API"
     VERSION: str = "0.1.0"
@@ -13,11 +17,11 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 # 24 hours
     
     # Database
-    DATABASE_URL: str = "sqlite:///./data/personal_media_manager.db"
+    DATABASE_URL: str = f"sqlite:///{_DEFAULT_DB_PATH}"
     
     # Storage
-    STORAGE_DIR: str = "./data"
-    THUMBNAILS_DIR: str = "./data/thumbnails"
+    STORAGE_DIR: str = _DEFAULT_DATA_DIR
+    THUMBNAILS_DIR: str = _DEFAULT_THUMBS_DIR
     
     # Thumbnail Profiles
     THUMBNAIL_PROFILES: dict = {
