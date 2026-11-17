@@ -214,12 +214,20 @@ def save_thumbnail(db: Session, media_id: str, sha256: str, thumbnail_base64: st
             if img.mode != "RGB":
                 img = img.convert("RGB")
 
+            from app.services.dhash_service import compute_dhash
+            dhash_str = compute_dhash(img)
+
             img.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
             real_w, real_h = img.size
 
             buf = io.BytesIO()
             img.save(buf, format="WEBP", quality=quality, method=4)
             webp_bytes = buf.getvalue()
+
+        # Update media dhash
+        media = db.query(Media).filter(Media.id == media_id).first()
+        if media:
+            media.dhash = dhash_str
         
         # Partitioned directory structure: /data/thumbnails/ab/cd/abcdef...webp
         sub1 = sha256[:2]

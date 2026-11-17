@@ -151,6 +151,15 @@ export class ApiClient {
     return this.request<any[]>(`/duplicates?offset=${offset}&limit=${limit}`);
   }
 
+  public static async getSimilarPhotos(maxDistance = 6) {
+    return this.request<any[]>(`/duplicates/similar?max_distance=${maxDistance}`);
+  }
+
+  public static getDuplicateExportUrl(format: 'csv' | 'json'): string {
+    const token = this.getToken();
+    return `${API_BASE}/duplicates/export?format=${format}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
+  }
+
   public static getThumbnailUrl(mediaId: string): string {
     return `${API_BASE}/media/${mediaId}/thumbnail`;
   }

@@ -5,18 +5,30 @@ import {
   CheckCircle2,
   HardDrive,
   FileText,
-  Info
+  Info,
+  Download,
+  Sparkles,
+  Layers
 } from 'lucide-react';
 import { MediaDetailModal } from '../library/MediaDetailModal';
 
 export const DuplicatesView: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<'exact' | 'similar'>('exact');
   const [duplicateGroups, setDuplicateGroups] = useState<any[]>([]);
+  const [similarGroups, setSimilarGroups] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingSimilar, setLoadingSimilar] = useState(false);
   const [selectedMediaId, setSelectedMediaId] = useState<string | null>(null);
 
   useEffect(() => {
     loadDuplicates();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'similar' && similarGroups.length === 0) {
+      loadSimilar();
+    }
+  }, [activeTab]);
 
   const loadDuplicates = async () => {
     if (!ApiClient.getToken()) {
@@ -31,6 +43,40 @@ export const DuplicatesView: React.FC = () => {
       console.error('Error loading duplicates:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadSimilar = async () => {
+    try {
+      setLoadingSimilar(true);
+      const clusters = await ApiClient.getSimilarPhotos(6);
+      setSimilarGroups(clusters);
+    } catch (err) {
+      console.error('Error loading similar photos:', err);
+    } finally {
+      setLoadingSimilar(false);
+    }
+  };
+
+  const handleExport = async (format: 'csv' | 'json') => {
+    try {
+      const url = ApiClient.getDuplicateExportUrl(format);
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${ApiClient.getToken()}`
+        }
+      });
+      const blob = await res.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `duplicates_report.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      console.error('Export failed:', err);
     }
   };
 
@@ -68,25 +114,115 @@ export const DuplicatesView: React.FC = () => {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <Copy size={24} color="#f59e0b" />
-            <h2 style={{ fontSize: '20px', fontWeight: 'bold' }}>Gruppi di Duplicati Esatti</h2>
+            <h2 style={{ fontSize: '20px', fontWeight: 'bold' }}>Deduplicazione & Foto Simili</h2>
           </div>
           <p style={{ color: '#94a3b8', fontSize: '13px', marginTop: '6px', maxWidth: '650px' }}>
-            Questi file presentano lo stesso hash SHA-256 binario, pur trovandosi su fonti o cartelle differenti con nomi potenzialmente diversi.
+            Identifica copie ridondanti identiche (SHA-256) ed esplora scatti continui o foto simili tramite perceptual hashing (dHash a 64 bit).
           </p>
         </div>
 
-        <div style={{
-          background: '#0f172a',
-          border: '1px solid #334155',
-          borderRadius: '10px',
-          padding: '12px 20px',
-          textAlign: 'right'
-        }}>
-          <div style={{ fontSize: '12px', color: '#94a3b8' }}>Spazio Ridondante Potenzialmente Recuperabile</div>
-          <div style={{ fontSize: '22px', fontWeight: 'bold', color: '#f59e0b', marginTop: '4px' }}>
-            {formatBytes(totalWastedBytes)}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+          <div style={{
+            background: '#0f172a',
+            border: '1px solid #334155',
+            borderRadius: '10px',
+            padding: '12px 20px',
+            textAlign: 'right'
+          }}>
+            <div style={{ fontSize: '12px', color: '#94a3b8' }}>Spazio Ridondante Recuperabile</div>
+            <div style={{ fontSize: '22px', fontWeight: 'bold', color: '#f59e0b', marginTop: '4px' }}>
+              {formatBytes(totalWastedBytes)}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <button
+              onClick={() => handleExport('csv')}
+              style={{
+                background: '#0284c7',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '8px 14px',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <Download size={14} /> Esporta CSV
+            </button>
+            <button
+              onClick={() => handleExport('json')}
+              style={{
+                background: '#0f172a',
+                color: '#cbd5e1',
+                border: '1px solid #334155',
+                borderRadius: '8px',
+                padding: '8px 14px',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <Download size={14} /> Esporta JSON
+            </button>
           </div>
         </div>
+      </div>
+
+      {/* Tabs Selector */}
+      <div style={{
+        display: 'flex',
+        background: '#0f172a',
+        border: '1px solid #334155',
+        borderRadius: '10px',
+        padding: '4px',
+        width: 'fit-content'
+      }}>
+        <button
+          onClick={() => setActiveTab('exact')}
+          style={{
+            background: activeTab === 'exact' ? '#0284c7' : 'transparent',
+            color: activeTab === 'exact' ? 'white' : '#94a3b8',
+            border: 'none',
+            borderRadius: '6px',
+            padding: '8px 16px',
+            fontSize: '13px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          <Layers size={15} />
+          Duplicati Esatti (SHA-256) ({duplicateGroups.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('similar')}
+          style={{
+            background: activeTab === 'similar' ? '#0284c7' : 'transparent',
+            color: activeTab === 'similar' ? 'white' : '#94a3b8',
+            border: 'none',
+            borderRadius: '6px',
+            padding: '8px 16px',
+            fontSize: '13px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          <Sparkles size={15} color={activeTab === 'similar' ? '#38bdf8' : '#f59e0b'} />
+          Foto Simili / Raffiche (dHash) {similarGroups.length > 0 && `(${similarGroups.length})`}
+        </button>
       </div>
 
       {/* Info notice about read-only policy */}
@@ -107,169 +243,300 @@ export const DuplicatesView: React.FC = () => {
         </span>
       </div>
 
-      {/* List of Duplicate Groups */}
-      {duplicateGroups.length === 0 && !loading ? (
-        <div style={{
-          textAlign: 'center',
-          padding: '80px 20px',
-          background: '#1e293b',
-          borderRadius: '16px',
-          border: '1px solid #334155'
-        }}>
-          <CheckCircle2 size={48} color="#22c55e" style={{ margin: '0 auto 16px' }} />
-          <h3 style={{ fontSize: '18px', fontWeight: 600 }}>Nessun duplicato binario rilevato</h3>
-          <p style={{ color: '#94a3b8', fontSize: '13px', marginTop: '6px' }}>
-            Tutti i file indicizzati nel catalogo sono univoci.
-          </p>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {duplicateGroups.map((group) => (
-            <div
-              key={group.media_id}
-              style={{
-                background: '#1e293b',
-                border: '1px solid #334155',
-                borderRadius: '12px',
-                overflow: 'hidden'
-              }}
-            >
-              {/* Group Header */}
-              <div style={{
-                background: '#0f172a',
-                padding: '14px 20px',
-                borderBottom: '1px solid #334155',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: '12px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{
-                    background: '#f59e0b',
-                    color: 'black',
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    padding: '3px 8px',
-                    borderRadius: '6px'
-                  }}>
-                    {group.copies_count} COPIE FISICHE
-                  </span>
-                  <span style={{ fontSize: '13px', color: '#94a3b8' }}>
-                    Dimensione per copia: <strong>{formatBytes(group.files[0]?.size_bytes)}</strong>
-                  </span>
+      {/* Content depending on active tab */}
+      {activeTab === 'exact' ? (
+        /* List of Exact Duplicate Groups */
+        duplicateGroups.length === 0 && !loading ? (
+          <div style={{
+            textAlign: 'center',
+            padding: '80px 20px',
+            background: '#1e293b',
+            borderRadius: '16px',
+            border: '1px solid #334155'
+          }}>
+            <CheckCircle2 size={48} color="#22c55e" style={{ margin: '0 auto 16px' }} />
+            <h3 style={{ fontSize: '18px', fontWeight: 600 }}>Nessun duplicato binario rilevato</h3>
+            <p style={{ color: '#94a3b8', fontSize: '13px', marginTop: '6px' }}>
+              Tutti i file indicizzati nel catalogo sono univoci.
+            </p>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {duplicateGroups.map((group) => (
+              <div
+                key={group.media_id}
+                style={{
+                  background: '#1e293b',
+                  border: '1px solid #334155',
+                  borderRadius: '12px',
+                  overflow: 'hidden'
+                }}
+              >
+                {/* Group Header */}
+                <div style={{
+                  background: '#0f172a',
+                  padding: '14px 20px',
+                  borderBottom: '1px solid #334155',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '12px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{
+                      background: '#f59e0b',
+                      color: 'black',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      padding: '3px 8px',
+                      borderRadius: '6px'
+                    }}>
+                      {group.copies_count} COPIE FISICHE
+                    </span>
+                    <span style={{ fontSize: '13px', color: '#94a3b8' }}>
+                      Dimensione per copia: <strong>{formatBytes(group.files[0]?.size_bytes)}</strong>
+                    </span>
+                  </div>
+
+                  <div style={{ fontSize: '11px', fontFamily: 'monospace', color: '#64748b' }}>
+                    SHA: {group.canonical_sha256}
+                  </div>
                 </div>
 
-                <div style={{ fontSize: '11px', fontFamily: 'monospace', color: '#64748b' }}>
-                  SHA: {group.canonical_sha256}
-                </div>
-              </div>
+                {/* Group Body: Thumbnail + Copies list */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', padding: '16px 20px', gap: '20px' }}>
+                  {/* Thumbnail */}
+                  <div
+                    onClick={() => setSelectedMediaId(group.media_id)}
+                    style={{
+                      width: '120px',
+                      height: '120px',
+                      borderRadius: '8px',
+                      background: '#090d16',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      overflow: 'hidden',
+                      flexShrink: 0
+                    }}
+                  >
+                    {group.has_thumbnail ? (
+                      <img
+                        src={ApiClient.getThumbnailUrl(group.media_id)}
+                        alt="Thumbnail"
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                    ) : (
+                      <FileText size={32} color="#64748b" />
+                    )}
+                  </div>
 
-              {/* Group Body: Thumbnail + Copies list */}
-              <div style={{ display: 'flex', flexWrap: 'wrap', padding: '16px 20px', gap: '20px' }}>
-                {/* Thumbnail */}
-                <div
-                  onClick={() => setSelectedMediaId(group.media_id)}
-                  style={{
-                    width: '120px',
-                    height: '120px',
-                    borderRadius: '8px',
-                    background: '#090d16',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    overflow: 'hidden',
-                    flexShrink: 0
-                  }}
-                >
-                  {group.has_thumbnail ? (
-                    <img
-                      src={ApiClient.getThumbnailUrl(group.media_id)}
-                      alt="Thumbnail"
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
-                  ) : (
-                    <FileText size={32} color="#64748b" />
-                  )}
-                </div>
-
-                {/* Physical Copies Comparison Table */}
-                <div style={{ flex: '1 1 500px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {group.files.map((file: any, idx: number) => (
-                    <div
-                      key={file.id}
-                      style={{
-                        background: '#0f172a',
-                        border: '1px solid #334155',
-                        borderRadius: '8px',
-                        padding: '10px 14px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '12px',
-                        fontSize: '12px'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-                        <span style={{
-                          color: '#f59e0b',
-                          fontWeight: 'bold',
-                          width: '20px',
-                          textAlign: 'center'
-                        }}>
-                          #{idx + 1}
-                        </span>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {file.filename}
-                          </div>
-                          <div style={{ color: '#94a3b8', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            📁 {file.relative_path}
+                  {/* Physical Copies Comparison Table */}
+                  <div style={{ flex: '1 1 500px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {group.files.map((file: any, idx: number) => (
+                      <div
+                        key={file.id}
+                        style={{
+                          background: '#0f172a',
+                          border: '1px solid #334155',
+                          borderRadius: '8px',
+                          padding: '10px 14px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '12px',
+                          fontSize: '12px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                          <span style={{
+                            color: '#f59e0b',
+                            fontWeight: 'bold',
+                            width: '20px',
+                            textAlign: 'center'
+                          }}>
+                            #{idx + 1}
+                          </span>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {file.filename}
+                            </div>
+                            <div style={{ color: '#94a3b8', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              📁 {file.relative_path}
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>
-                            <HardDrive size={13} color={file.source_status === 'offline' ? '#94a3b8' : '#38bdf8'} />
-                            <span>{file.source_name || 'Fonte'}</span>
-                          </div>
-                          <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end', marginTop: '4px' }}>
-                            <span style={{
-                              fontSize: '10px',
-                              padding: '1px 5px',
-                              borderRadius: '4px',
-                              background: file.source_status === 'offline' ? 'rgba(148, 163, 184, 0.2)' : 'rgba(34, 197, 94, 0.2)',
-                              color: file.source_status === 'offline' ? '#94a3b8' : '#22c55e',
-                              fontWeight: 600
-                            }}>
-                              {file.source_status === 'offline' ? 'OFFLINE' : 'ONLINE'}
-                            </span>
-                            {file.availability_status === 'missing' && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>
+                              <HardDrive size={13} color={file.source_status === 'offline' ? '#94a3b8' : '#38bdf8'} />
+                              <span>{file.source_name || 'Fonte'}</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end', marginTop: '4px' }}>
                               <span style={{
                                 fontSize: '10px',
                                 padding: '1px 5px',
                                 borderRadius: '4px',
-                                background: 'rgba(244, 63, 94, 0.2)',
-                                color: '#f43f5e',
+                                background: file.source_status === 'offline' ? 'rgba(148, 163, 184, 0.2)' : 'rgba(34, 197, 94, 0.2)',
+                                color: file.source_status === 'offline' ? '#94a3b8' : '#22c55e',
                                 fontWeight: 600
                               }}>
-                                NON TROVATO
+                                {file.source_status === 'offline' ? 'OFFLINE' : 'ONLINE'}
                               </span>
-                            )}
+                              {file.availability_status === 'missing' && (
+                                <span style={{
+                                  fontSize: '10px',
+                                  padding: '1px 5px',
+                                  borderRadius: '4px',
+                                  background: 'rgba(244, 63, 94, 0.2)',
+                                  color: '#f43f5e',
+                                  fontWeight: 600
+                                }}>
+                                  NON TROVATO
+                                </span>
+                              )}
+                            </div>
                           </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      ) : (
+        /* List of Similar / Burst Photo Clusters */
+        loadingSimilar ? (
+          <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94a3b8' }}>
+            Analisi percettiva dHash in corso...
+          </div>
+        ) : similarGroups.length === 0 ? (
+          <div style={{
+            textAlign: 'center',
+            padding: '80px 20px',
+            background: '#1e293b',
+            borderRadius: '16px',
+            border: '1px solid #334155'
+          }}>
+            <Sparkles size={48} color="#38bdf8" style={{ margin: '0 auto 16px' }} />
+            <h3 style={{ fontSize: '18px', fontWeight: 600 }}>Nessuna foto simile o raffica rilevata</h3>
+            <p style={{ color: '#94a3b8', fontSize: '13px', marginTop: '6px' }}>
+              I dHash delle foto nel catalogo presentano variazioni visive superiori alla soglia di tolleranza.
+            </p>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {similarGroups.map((cluster, cIdx) => (
+              <div
+                key={cIdx}
+                style={{
+                  background: '#1e293b',
+                  border: '1px solid #334155',
+                  borderRadius: '12px',
+                  padding: '20px'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{
+                      background: 'rgba(56, 189, 248, 0.2)',
+                      color: '#38bdf8',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      padding: '3px 8px',
+                      borderRadius: '6px'
+                    }}>
+                      GRUPPO #{cIdx + 1}
+                    </span>
+                    <span style={{ fontSize: '14px', fontWeight: 600, color: '#f8fafc' }}>
+                      {cluster.similar_count} Foto Quasi-Identiche / Raffica
+                    </span>
+                  </div>
+                </div>
+
+                {/* Side-by-side gallery of similar photos */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '14px' }}>
+                  {/* Base Photo */}
+                  <div
+                    onClick={() => setSelectedMediaId(cluster.base_media.media_id)}
+                    style={{
+                      background: '#0f172a',
+                      border: '2px solid #38bdf8',
+                      borderRadius: '8px',
+                      overflow: 'hidden',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <div style={{ height: '140px', background: '#090d16', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <img
+                        src={ApiClient.getThumbnailUrl(cluster.base_media.media_id)}
+                        alt={cluster.base_media.filename}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                    </div>
+                    <div style={{ padding: '8px 10px', fontSize: '11px' }}>
+                      <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {cluster.base_media.filename}
+                      </div>
+                      <div style={{ color: '#38bdf8', fontWeight: 600, marginTop: '2px' }}>
+                        Scatto Base
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Matches */}
+                  {cluster.matches.map((match: any) => (
+                    <div
+                      key={match.media_id}
+                      onClick={() => setSelectedMediaId(match.media_id)}
+                      style={{
+                        background: '#0f172a',
+                        border: '1px solid #334155',
+                        borderRadius: '8px',
+                        overflow: 'hidden',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <div style={{ height: '140px', background: '#090d16', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                        <img
+                          src={ApiClient.getThumbnailUrl(match.media_id)}
+                          alt={match.filename}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                        <span style={{
+                          position: 'absolute',
+                          top: '6px',
+                          right: '6px',
+                          background: 'rgba(34, 197, 94, 0.85)',
+                          color: 'black',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          padding: '1px 5px',
+                          borderRadius: '4px'
+                        }}>
+                          {match.similarity_pct}%
+                        </span>
+                      </div>
+                      <div style={{ padding: '8px 10px', fontSize: '11px' }}>
+                        <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {match.filename}
+                        </div>
+                        <div style={{ color: '#94a3b8', marginTop: '2px' }}>
+                          Distanza dHash: {match.distance}
                         </div>
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )
       )}
 
       {/* Modal Detail */}
