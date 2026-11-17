@@ -2,7 +2,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from fastapi import HTTPException, status
-from app.models.entities import Source, File
+from app.models.entities import Source, File, Thumbnail
 from app.schemas.source import SourceCreate, SourceUpdate, SourceOut
 
 def get_user_sources(db: Session, user_id: str) -> List[SourceOut]:
@@ -64,15 +64,18 @@ def update_source(db: Session, user_id: str, source_id: str, source_in: SourceUp
 
 def get_source_file_fingerprints(db: Session, user_id: str, source_id: str) -> dict:
     get_source_by_id(db, user_id, source_id) # ownership check
-    files = db.query(File).filter(File.source_id == source_id).all()
+    rows = db.query(File, Thumbnail.id.label("thumb_id"))\
+             .outerjoin(Thumbnail, File.media_id == Thumbnail.media_id)\
+             .filter(File.source_id == source_id).all()
     fingerprints = {}
-    for f in files:
+    for f, thumb_id in rows:
         fingerprints[f.relative_path] = {
             "id": f.id,
             "size_bytes": f.size_bytes,
             "filesystem_modified_at": f.filesystem_modified_at.isoformat() if f.filesystem_modified_at else None,
             "sha256": f.sha256,
-            "availability_status": f.availability_status
+            "availability_status": f.availability_status,
+            "has_thumbnail": thumb_id is not None
         }
     return fingerprints
 

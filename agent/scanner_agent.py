@@ -14,6 +14,8 @@ import hashlib
 import mimetypes
 import base64
 import io
+import subprocess
+import tempfile
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any, Tuple
 
@@ -22,6 +24,12 @@ try:
 except ImportError:
     print("Error: 'requests' is required. Run: pip install -r agent/requirements.txt")
     sys.exit(1)
+
+try:
+    import pillow_heif
+    pillow_heif.register_heif_opener()
+except Exception:
+    pass
 
 try:
     from PIL import Image, ImageOps, ExifTags
@@ -35,8 +43,19 @@ THUMBNAIL_PROFILES = {
     "balanced": (320, 65),
     "high": (384, 75)
 }
-SUPPORTED_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".heic", ".dng"}
-SUPPORTED_VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
+SUPPORTED_RAW_EXTS = {
+    ".dng", ".cr2", ".cr3", ".crw", ".nef", ".nrw", ".arw", ".srf", ".sr2",
+    ".raf", ".orf", ".rw2", ".raw", ".pef", ".srw", ".3fr", ".fff", ".iiq",
+    ".x3f", ".rwl"
+}
+SUPPORTED_IMAGE_EXTS = {
+    ".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".tif",
+    ".heic", ".heif", ".avif", ".jxl"
+} | SUPPORTED_RAW_EXTS
+SUPPORTED_VIDEO_EXTS = {
+    ".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v",
+    ".mts", ".m2ts", ".mpg", ".mpeg", ".3gp", ".insv"
+}
 SUPPORTED_EXTS = SUPPORTED_IMAGE_EXTS | SUPPORTED_VIDEO_EXTS
 IGNORED_DIR_NAMES = {".git", ".svn", "__pycache__", "node_modules", "venv", ".DS_Store", "@eaDir", ".Spotlight-V100", ".Trashes"}
 
@@ -119,6 +138,42 @@ class ScannerAgent:
                 hasher.update(chunk)
         return hasher.hexdigest()
 
+    def extract_largest_embedded_jpeg(self, filepath: str, max_read_bytes: int = 12 * 1024 * 1024) -> Optional[bytes]:
+        """Locate and extract the largest valid embedded JPEG thumbnail/preview in a RAW file."""
+        try:
+            with open(filepath, "rb") as f:
+                data = f.read(max_read_bytes)
+
+            best_block = None
+            max_len = 0
+            idx = 0
+            data_len = len(data)
+
+            while idx < data_len - 3:
+                soi = data.find(b"\xff\xd8\xff", idx)
+                if soi == -1:
+                    break
+                eoi = data.find(b"\xff\xd9", soi + 3)
+                if eoi == -1:
+                    idx = soi + 3
+                    continue
+
+                block_len = (eoi + 2) - soi
+                if block_len > 8192 and block_len > max_len:
+                    candidate = data[soi : eoi + 2]
+                    try:
+                        with Image.open(io.BytesIO(candidate)) as test_img:
+                            test_img.verify()
+                        max_len = block_len
+                        best_block = candidate
+                    except Exception:
+                        pass
+                idx = eoi + 2
+
+            return best_block
+        except Exception:
+            return None
+
     def extract_image_metadata_and_thumb(
         self, filepath: str
     ) -> Tuple[Optional[str], Optional[int], Optional[int], Dict[str, Any], Optional[str]]:
@@ -131,54 +186,94 @@ class ScannerAgent:
         height = None
         meta: Dict[str, Any] = {}
         thumb_base64 = None
+        ext = os.path.splitext(filepath)[1].lower()
 
         try:
-            with Image.open(filepath) as img:
-                width, height = img.size
+            thumb_img = None
 
-                # Extract EXIF if available
-                exif_data = img.getexif()
-                if exif_data:
-                    for tag_id, value in exif_data.items():
-                        tag_name = ExifTags.TAGS.get(tag_id, str(tag_id))
-                        if tag_name in ("Make", "Model", "Software", "LensModel"):
-                            meta[tag_name] = str(value)
-                        elif tag_name == "DateTimeOriginal" or tag_name == "DateTime":
-                            # Standard format: 'YYYY:MM:DD HH:MM:SS'
-                            try:
-                                dt = datetime.strptime(str(value), "%Y:%m:%d %H:%M:%S")
-                                captured_at = dt.isoformat()
-                            except Exception:
-                                pass
+            # 1. Try standard Pillow Image.open for metadata and initial image
+            try:
+                with Image.open(filepath) as img:
+                    width, height = img.size
 
-                    # Extract GPS Info
+                    # Extract EXIF if available
+                    exif_data = img.getexif()
+                    if exif_data:
+                        for tag_id, value in exif_data.items():
+                            tag_name = ExifTags.TAGS.get(tag_id, str(tag_id))
+                            if tag_name in ("Make", "Model", "Software", "LensModel"):
+                                meta[tag_name] = str(value)
+                            elif tag_name in ("DateTimeOriginal", "DateTime"):
+                                try:
+                                    dt = datetime.strptime(str(value), "%Y:%m:%d %H:%M:%S")
+                                    captured_at = dt.isoformat()
+                                except Exception:
+                                    pass
+
+                        # Extract GPS Info
+                        try:
+                            gps_info = exif_data.get_ifd(0x8825)
+                            if gps_info:
+                                lat_val = gps_info.get(2)
+                                lat_ref = gps_info.get(1)
+                                lon_val = gps_info.get(4)
+                                lon_ref = gps_info.get(3)
+                                if lat_val and lat_ref and lon_val and lon_ref:
+                                    def _to_deg(val, ref):
+                                        d = float(val[0])
+                                        m = float(val[1])
+                                        s = float(val[2])
+                                        res = d + (m / 60.0) + (s / 3600.0)
+                                        return -res if ref in ("S", "W") else res
+                                    meta["latitude"] = _to_deg(lat_val, lat_ref)
+                                    meta["longitude"] = _to_deg(lon_val, lon_ref)
+                        except Exception:
+                            pass
+
+                    # If this is not a RAW file and image is adequately sized, use it for thumbnail
+                    if ext not in SUPPORTED_RAW_EXTS and width >= 256 and height >= 256:
+                        try:
+                            thumb_img = ImageOps.exif_transpose(img)
+                        except Exception:
+                            thumb_img = img.copy()
+            except Exception as e:
+                meta["exif_read_error"] = str(e)
+
+            # 2. If RAW or thumb_img not yet acquired, try embedded JPEG
+            if thumb_img is None:
+                raw_jpeg = self.extract_largest_embedded_jpeg(filepath)
+                if raw_jpeg:
                     try:
-                        gps_info = exif_data.get_ifd(0x8825)
-                        if gps_info:
-                            lat_val = gps_info.get(2)
-                            lat_ref = gps_info.get(1)
-                            lon_val = gps_info.get(4)
-                            lon_ref = gps_info.get(3)
-                            if lat_val and lat_ref and lon_val and lon_ref:
-                                def _to_deg(val, ref):
-                                    d = float(val[0])
-                                    m = float(val[1])
-                                    s = float(val[2])
-                                    res = d + (m / 60.0) + (s / 3600.0)
-                                    return -res if ref in ("S", "W") else res
-                                meta["latitude"] = _to_deg(lat_val, lat_ref)
-                                meta["longitude"] = _to_deg(lon_val, lon_ref)
+                        raw_io = io.BytesIO(raw_jpeg)
+                        with Image.open(raw_io) as r_img:
+                            thumb_img = ImageOps.exif_transpose(r_img)
+                            if not width or not height or width < 256:
+                                width, height = r_img.size
                     except Exception:
-                        pass
+                        thumb_img = None
 
-                # Thumbnail generation
-                # Handle EXIF orientation first
+            # 3. macOS native fallback via `sips` for RAW/HEIC if still needed
+            if thumb_img is None and sys.platform == "darwin":
                 try:
-                    thumb_img = ImageOps.exif_transpose(img)
+                    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_f:
+                        tmp_path = tmp_f.name
+                    res = subprocess.run(
+                        ["sips", "-s", "format", "jpeg", "-Z", "512", filepath, "--out", tmp_path],
+                        capture_output=True,
+                        timeout=10
+                    )
+                    if res.returncode == 0 and os.path.exists(tmp_path):
+                        with Image.open(tmp_path) as sips_img:
+                            thumb_img = ImageOps.exif_transpose(sips_img)
+                            if not width or not height:
+                                width, height = sips_img.size
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
                 except Exception:
-                    thumb_img = img
+                    pass
 
-                # Convert to RGB if needed (RGBA or CMYK)
+            # 4. Generate WebP thumbnail from thumb_img
+            if thumb_img is not None:
                 if thumb_img.mode in ("RGBA", "LA", "P"):
                     thumb_img = thumb_img.convert("RGBA")
                 elif thumb_img.mode != "RGB":
@@ -186,13 +281,12 @@ class ScannerAgent:
 
                 max_edge, quality = THUMBNAIL_PROFILES.get(self.thumb_profile, (320, 65))
                 thumb_img.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
-                
+
                 buf = io.BytesIO()
                 thumb_img.save(buf, format="WEBP", quality=quality, method=4)
                 thumb_base64 = f"data:image/webp;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"
 
         except Exception as e:
-            # File might be partially corrupted or non-standard format
             meta["read_error"] = str(e)
 
         return captured_at, width, height, meta, thumb_base64
@@ -352,24 +446,56 @@ class ScannerAgent:
                     try:
                         fp_dt = datetime.fromisoformat(fp_mtime.replace("Z", "+00:00"))
                         if abs(fp_dt.timestamp() - mtime) < 2.0:
-                            # Skip heavy work!
-                            skipped_count += 1
-                            item = {
-                                "filename": filename,
-                                "relative_path": rel_path,
-                                "extension": ext,
-                                "mime_type": mimetypes.guess_type(filename)[0] or "application/octet-stream",
-                                "size_bytes": size_bytes,
-                                "sha256": fp["sha256"],
-                                "modified_at": mtime_iso,
-                                "captured_at": None,
-                                "thumbnail_base64": None
-                            }
-                            batch.append(item)
-                            if len(batch) >= batch_size:
-                                self.send_batch(scan_id, batch, rel_path)
-                                batch.clear()
-                            continue
+                            needs_thumb = fp.get("has_thumbnail") is False
+                            if not needs_thumb:
+                                # Skip heavy work!
+                                skipped_count += 1
+                                item = {
+                                    "filename": filename,
+                                    "relative_path": rel_path,
+                                    "extension": ext,
+                                    "mime_type": mimetypes.guess_type(filename)[0] or "application/octet-stream",
+                                    "size_bytes": size_bytes,
+                                    "sha256": fp["sha256"],
+                                    "modified_at": mtime_iso,
+                                    "captured_at": None,
+                                    "thumbnail_base64": None
+                                }
+                                batch.append(item)
+                                if len(batch) >= batch_size:
+                                    self.send_batch(scan_id, batch, rel_path)
+                                    batch.clear()
+                                continue
+                            else:
+                                # Re-use known hash without rehashing, but extract thumbnail and metadata
+                                skipped_count += 1
+                                sha256 = fp["sha256"]
+                                mime = mimetypes.guess_type(filename)[0] or ("image/jpeg" if ext in SUPPORTED_IMAGE_EXTS else "video/mp4")
+                                captured_at, width, height, duration_sec, meta, thumb = None, None, None, None, {}, None
+                                if ext in SUPPORTED_IMAGE_EXTS:
+                                    captured_at, width, height, meta, thumb = self.extract_image_metadata_and_thumb(full_path)
+                                elif ext in SUPPORTED_VIDEO_EXTS:
+                                    captured_at, width, height, duration_sec, meta, thumb = self.extract_video_metadata_and_thumb(full_path)
+                                item = {
+                                    "filename": filename,
+                                    "relative_path": rel_path,
+                                    "extension": ext,
+                                    "mime_type": mime,
+                                    "size_bytes": size_bytes,
+                                    "sha256": sha256,
+                                    "modified_at": mtime_iso,
+                                    "captured_at": captured_at,
+                                    "width": width,
+                                    "height": height,
+                                    "duration_seconds": duration_sec,
+                                    "metadata_json": meta,
+                                    "thumbnail_base64": thumb
+                                }
+                                batch.append(item)
+                                if len(batch) >= batch_size:
+                                    self.send_batch(scan_id, batch, rel_path)
+                                    batch.clear()
+                                continue
                     except Exception:
                         pass
 

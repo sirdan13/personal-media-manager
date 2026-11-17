@@ -10,6 +10,7 @@ import {
   Calendar,
   Grid as GridIcon
 } from 'lucide-react';
+import { isRawExtension } from '../scanner/formatDetector';
 import { MediaDetailModal } from './MediaDetailModal';
 
 interface LibraryViewProps {
@@ -118,7 +119,11 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' })
     return groups;
   }, [mediaList]);
 
-  const renderMediaCard = (media: any) => (
+  const renderMediaCard = (media: any) => {
+    const fileExt = media.primary_extension || (media.primary_filename ? media.primary_filename.split('.').pop() || '' : '');
+    const isRaw = fileExt ? isRawExtension(fileExt) : false;
+
+    return (
     <div
       key={media.id}
       onClick={() => setSelectedMediaId(media.id)}
@@ -179,6 +184,28 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' })
             letterSpacing: '0.5px'
           }}>
             LIVE
+          </span>
+        )}
+
+        {/* RAW badge */}
+        {isRaw && (
+          <span style={{
+            position: 'absolute',
+            top: '8px',
+            left: media.is_live_photo ? '56px' : '8px',
+            background: '#f59e0b',
+            color: '#0f172a',
+            fontSize: '10px',
+            fontWeight: 800,
+            padding: '2px 6px',
+            borderRadius: '4px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '3px',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.5)',
+            letterSpacing: '0.5px'
+          }}>
+            RAW · {fileExt.toUpperCase()}
           </span>
         )}
 
@@ -250,7 +277,8 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' })
         </div>
       </div>
     </div>
-  );
+    );
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -377,6 +405,23 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' })
               }}
             >
               <Video size={13} /> Video
+            </button>
+            <button
+              onClick={() => { setMediaType('raw'); handleFilterChange(); }}
+              style={{
+                padding: '6px 10px',
+                borderRadius: '6px',
+                border: 'none',
+                background: mediaType === 'raw' ? '#f59e0b' : 'transparent',
+                color: mediaType === 'raw' ? '#0f172a' : '#94a3b8',
+                fontSize: '12px',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+            >
+              Solo RAW
             </button>
           </div>
 

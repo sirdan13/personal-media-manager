@@ -1,8 +1,14 @@
 import { getFileExtension, isSupportedMedia } from './formatDetector';
 
+export const IGNORED_EXTENSIONS = new Set([
+  'aae', 'xmp', 'lrv', 'thm', 'dat', 'ds_store', 'db', 'ini'
+]);
+
 export interface DiscoveredFileItem {
   file: File;
   relativePath: string;
+  hasAppleEdits?: boolean;
+  hasSidecarXmp?: boolean;
 }
 
 export interface BrowserCapabilities {
@@ -46,28 +52,50 @@ export async function* traverseDirectoryHandle(
   dirHandle: FileSystemDirectoryHandle,
   currentPath = ''
 ): AsyncGenerator<DiscoveredFileItem> {
+  const filesInDir: FileSystemFileHandle[] = [];
+  const subDirs: FileSystemDirectoryHandle[] = [];
+  const sidecarNames = new Set<string>();
+
   // @ts-expect-error - FileSystemDirectoryHandle.values() is standard in Chromium
   for await (const entry of dirHandle.values()) {
-    const entryPath = currentPath ? `${currentPath}/${entry.name}` : entry.name;
-
     if (entry.kind === 'file') {
       const ext = getFileExtension(entry.name);
-      if (isSupportedMedia(ext)) {
-        const fileHandle = entry as FileSystemFileHandle;
-        try {
-          const file = await fileHandle.getFile();
-          yield {
-            file,
-            relativePath: entryPath
-          };
-        } catch (err) {
-          console.warn(`Could not read file ${entryPath}:`, err);
-        }
+      if (ext === 'aae' || ext === 'xmp') {
+        sidecarNames.add(entry.name.toLowerCase());
+      }
+      if (!IGNORED_EXTENSIONS.has(ext) && isSupportedMedia(ext)) {
+        filesInDir.push(entry as FileSystemFileHandle);
       }
     } else if (entry.kind === 'directory') {
-      const subDirHandle = entry as FileSystemDirectoryHandle;
-      yield* traverseDirectoryHandle(subDirHandle, entryPath);
+      subDirs.push(entry as FileSystemDirectoryHandle);
     }
+  }
+
+  for (const fileHandle of filesInDir) {
+    const entryPath = currentPath ? `${currentPath}/${fileHandle.name}` : fileHandle.name;
+    try {
+      const file = await fileHandle.getFile();
+      const dotIdx = fileHandle.name.lastIndexOf('.');
+      const baseName = dotIdx !== -1 ? fileHandle.name.substring(0, dotIdx).toLowerCase() : fileHandle.name.toLowerCase();
+      const fullNameLower = fileHandle.name.toLowerCase();
+
+      const hasAppleEdits = sidecarNames.has(`${baseName}.aae`) || sidecarNames.has(`${fullNameLower}.aae`);
+      const hasSidecarXmp = sidecarNames.has(`${baseName}.xmp`) || sidecarNames.has(`${fullNameLower}.xmp`);
+
+      yield {
+        file,
+        relativePath: entryPath,
+        hasAppleEdits,
+        hasSidecarXmp
+      };
+    } catch (err) {
+      console.warn(`Could not read file ${entryPath}:`, err);
+    }
+  }
+
+  for (const subDirHandle of subDirs) {
+    const subPath = currentPath ? `${currentPath}/${subDirHandle.name}` : subDirHandle.name;
+    yield* traverseDirectoryHandle(subDirHandle, subPath);
   }
 }
 
@@ -77,19 +105,47 @@ export async function* traverseDirectoryHandle(
 export function* traverseFileList(
   fileList: FileList
 ): Generator<DiscoveredFileItem> {
+  // Pre-index sidecars by parent folder
+  const sidecarsByDir = new Map<string, Set<string>>();
   for (let i = 0; i < fileList.length; i++) {
     const file = fileList[i];
     const ext = getFileExtension(file.name);
-    if (!isSupportedMedia(ext)) continue;
+    if (ext === 'aae' || ext === 'xmp') {
+      const path = file.webkitRelativePath || file.name;
+      const slashIdx = path.lastIndexOf('/');
+      const parentDir = slashIdx !== -1 ? path.substring(0, slashIdx) : '';
+      if (!sidecarsByDir.has(parentDir)) {
+        sidecarsByDir.set(parentDir, new Set());
+      }
+      sidecarsByDir.get(parentDir)!.add(file.name.toLowerCase());
+    }
+  }
+
+  for (let i = 0; i < fileList.length; i++) {
+    const file = fileList[i];
+    const ext = getFileExtension(file.name);
+    if (IGNORED_EXTENSIONS.has(ext) || !isSupportedMedia(ext)) continue;
 
     const path = file.webkitRelativePath || file.name;
-    // Strip root folder name from relative path if present for clean uniformity
     const slashIdx = path.indexOf('/');
     const relativePath = slashIdx !== -1 ? path.slice(slashIdx + 1) : path;
 
+    const lastSlash = path.lastIndexOf('/');
+    const parentDir = lastSlash !== -1 ? path.substring(0, lastSlash) : '';
+    const sidecars = sidecarsByDir.get(parentDir);
+
+    const dotIdx = file.name.lastIndexOf('.');
+    const baseName = dotIdx !== -1 ? file.name.substring(0, dotIdx).toLowerCase() : file.name.toLowerCase();
+    const fullNameLower = file.name.toLowerCase();
+
+    const hasAppleEdits = !!sidecars && (sidecars.has(`${baseName}.aae`) || sidecars.has(`${fullNameLower}.aae`));
+    const hasSidecarXmp = !!sidecars && (sidecars.has(`${baseName}.xmp`) || sidecars.has(`${fullNameLower}.xmp`));
+
     yield {
       file,
-      relativePath
+      relativePath,
+      hasAppleEdits,
+      hasSidecarXmp
     };
   }
 }

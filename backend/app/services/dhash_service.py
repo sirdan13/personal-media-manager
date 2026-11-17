@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from PIL import Image
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -27,12 +27,17 @@ def compute_dhash(img: Image.Image) -> str:
 def hamming_distance(h1: str, h2: str) -> int:
     """Calculates the bitwise Hamming distance between two 16-hex dHash strings."""
     try:
-        return bin(int(h1, 16) ^ int(h2, 16)).count("1")
+        return (int(h1, 16) ^ int(h2, 16)).bit_count()
     except Exception:
         return 64
 
 
-def find_similar_media_groups(db: Session, user_id: str, max_distance: int = 6) -> List[Dict[str, Any]]:
+def find_similar_media_groups(
+    db: Session,
+    user_id: str,
+    max_distance: int = 6,
+    max_time_diff_hours: Optional[int] = None
+) -> List[Dict[str, Any]]:
     """
     Finds clusters of visually similar photos (e.g. burst shots, slight edits)
     that have different canonical SHA-256 hashes but Hamming distance <= max_distance.
@@ -57,17 +62,26 @@ def find_similar_media_groups(db: Session, user_id: str, max_distance: int = 6) 
         .all()
     )
 
+    # Precompute integer dhash values outside the quadratic loop for high performance
+    items_with_int = []
+    for m in media_list:
+        try:
+            dhash_int = int(m.dhash, 16)
+            items_with_int.append((m, dhash_int))
+        except (ValueError, TypeError):
+            continue
+
     visited = set()
     clusters = []
 
-    for i in range(len(media_list)):
-        m1 = media_list[i]
+    for i in range(len(items_with_int)):
+        m1, dhash1_int = items_with_int[i]
         if m1.id in visited:
             continue
 
         similar_items = []
-        for j in range(i + 1, len(media_list)):
-            m2 = media_list[j]
+        for j in range(i + 1, len(items_with_int)):
+            m2, dhash2_int = items_with_int[j]
             if m2.id in visited:
                 continue
 
@@ -75,7 +89,12 @@ def find_similar_media_groups(db: Session, user_id: str, max_distance: int = 6) 
             if m1.canonical_sha256 == m2.canonical_sha256:
                 continue
 
-            dist = hamming_distance(m1.dhash, m2.dhash)
+            if max_time_diff_hours is not None and m1.captured_at and m2.captured_at:
+                diff_sec = abs((m1.captured_at - m2.captured_at).total_seconds())
+                if diff_sec > max_time_diff_hours * 3600:
+                    continue
+
+            dist = (dhash1_int ^ dhash2_int).bit_count()
             if dist <= max_distance:
                 similarity_pct = round((64 - dist) / 64.0 * 100, 1)
                 similar_items.append({

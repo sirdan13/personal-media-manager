@@ -1,12 +1,21 @@
+import os
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
 from app.core.database import Base, get_db
+from app.core.config import settings
 from app.main import app
 
 # In-memory SQLite database for test suite
 TEST_DATABASE_URL = "sqlite:///:memory:"
+
+@pytest.fixture(autouse=True)
+def isolate_thumbnails_dir(tmp_path, monkeypatch):
+    test_thumb_dir = tmp_path / "thumbnails"
+    test_thumb_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(settings, "THUMBNAILS_DIR", str(test_thumb_dir))
+    yield str(test_thumb_dir)
 
 @pytest.fixture(scope="session")
 def db_engine():

@@ -41,6 +41,7 @@ class MediaOut(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     primary_filename: Optional[str] = None
+    primary_extension: Optional[str] = None
     primary_size_bytes: Optional[int] = None
     created_at: datetime
 

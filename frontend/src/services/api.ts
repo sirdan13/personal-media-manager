@@ -243,6 +243,11 @@ export class ApiClient {
     return `${API_BASE}/media/${mediaId}/thumbnail`;
   }
 
+  public static getMediaStreamUrl(mediaId: string): string {
+    const token = this.getToken();
+    return `${API_BASE}/media/${mediaId}/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+  }
+
   // Storage Optimization & Profile Settings
   public static async getStorageSettings() {
     return this.request<{

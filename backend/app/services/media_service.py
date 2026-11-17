@@ -8,6 +8,12 @@ from app.schemas.media import (
     TimelineBucketOut, MapMediaOut, MediaAlbumTagItem
 )
 
+RAW_EXTENSIONS = {
+    "dng", "cr2", "cr3", "crw", "nef", "nrw", "arw", "srf", "sr2",
+    "raf", "orf", "rw2", "raw", "pef", "srw", "3fr", "fff", "iiq",
+    "x3f", "rwl", "erf", "kdc", "dcr", "mos"
+}
+
 def list_user_media(
     db: Session,
     user_id: str,
@@ -26,13 +32,24 @@ def list_user_media(
         func.count(File.id).label("copies_count"),
         func.count(Thumbnail.id).label("thumb_count"),
         func.min(File.filename).label("primary_filename"),
+        func.min(File.extension).label("primary_extension"),
         func.max(File.size_bytes).label("primary_size")
     ).outerjoin(File, Media.id == File.media_id)\
      .outerjoin(Thumbnail, Media.id == Thumbnail.media_id)\
      .filter(Media.user_id == user_id)
 
     if media_type:
-        query = query.filter(Media.media_type == media_type)
+        if media_type.lower() == "raw":
+            query = query.filter(func.lower(File.extension).in_(RAW_EXTENSIONS))
+        else:
+            query = query.filter(Media.media_type == media_type)
+    else:
+        # Hide secondary live photo MOV videos from main gallery
+        live_video_subq = db.query(Media.live_video_media_id).filter(
+            Media.user_id == user_id,
+            Media.live_video_media_id.isnot(None)
+        )
+        query = query.filter(~Media.id.in_(live_video_subq))
     
     if source_id:
         query = query.filter(File.source_id == source_id)
@@ -71,7 +88,7 @@ def list_user_media(
     rows = query.offset(offset).limit(limit).all()
 
     results = []
-    for media, copies_count, thumb_count, p_filename, p_size in rows:
+    for media, copies_count, thumb_count, p_filename, p_extension, p_size in rows:
         results.append(MediaOut(
             id=media.id,
             user_id=media.user_id,
@@ -89,6 +106,7 @@ def list_user_media(
             latitude=getattr(media, "latitude", None),
             longitude=getattr(media, "longitude", None),
             primary_filename=p_filename,
+            primary_extension=p_extension,
             primary_size_bytes=p_size,
             created_at=media.created_at
         ))
@@ -155,6 +173,7 @@ def get_media_detail(db: Session, user_id: str, media_id: str) -> MediaDetailOut
         latitude=getattr(media, "latitude", None),
         longitude=getattr(media, "longitude", None),
         primary_filename=file_outs[0].filename if file_outs else None,
+        primary_extension=file_outs[0].extension if file_outs else None,
         primary_size_bytes=file_outs[0].size_bytes if file_outs else None,
         created_at=media.created_at,
         files=file_outs,

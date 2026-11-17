@@ -1,36 +1,10 @@
 import pytest
 from datetime import datetime, timezone
-from fastapi.testclient import TestClient
-from app.main import app
-from app.core.database import SessionLocal
 from app.models.entities import User, Media, File, Source, Album, Tag
-from app.core.security import hash_password
 
-client = TestClient(app)
-
-@pytest.fixture
-def auth_header_phase_4():
-    db = SessionLocal()
-    email = f"phase4_{datetime.now(timezone.utc).timestamp()}@test.com"
-    user = User(
-        email=email,
-        password_hash=hash_password("secret123"),
-        display_name="Phase 4 Tester"
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-
-    # Login to get JWT
-    resp = client.post("/api/v1/auth/login", json={"email": email, "password": "secret123"})
-    token = resp.json()["access_token"]
+def test_phase_4_timeline_and_map_endpoints(client, auth_headers, db):
+    user = db.query(User).filter(User.email == "test@example.com").first()
     user_id = user.id
-    db.close()
-    return {"Authorization": f"Bearer {token}"}, user_id
-
-def test_phase_4_timeline_and_map_endpoints(auth_header_phase_4):
-    headers, user_id = auth_header_phase_4
-    db = SessionLocal()
 
     # Create dummy source
     source = Source(user_id=user_id, name="Test Phone", source_type="local_folder")
@@ -84,14 +58,12 @@ def test_phase_4_timeline_and_map_endpoints(auth_header_phase_4):
     db.add_all([f1, f2, f3])
     db.commit()
     m1_id, m2_id = m1.id, m2.id
-    db.close()
 
     # Test Timeline
-    resp = client.get("/api/v1/media/timeline", headers=headers)
+    resp = client.get("/api/v1/media/timeline", headers=auth_headers)
     assert resp.status_code == 200
     timeline = resp.json()
     assert len(timeline) >= 2
-    # Check buckets
     keys = [b["month_key"] for b in timeline]
     assert "2025-08" in keys
     assert "2025-07" in keys
@@ -101,7 +73,7 @@ def test_phase_4_timeline_and_map_endpoints(auth_header_phase_4):
     assert jul_bucket["month"] == 7
 
     # Test Map
-    resp = client.get("/api/v1/media/map", headers=headers)
+    resp = client.get("/api/v1/media/map", headers=auth_headers)
     assert resp.status_code == 200
     map_items = resp.json()
     assert len(map_items) == 2  # Only m1 and m2 have GPS
@@ -112,9 +84,10 @@ def test_phase_4_timeline_and_map_endpoints(auth_header_phase_4):
     assert pytest.approx(rome_item["latitude"], 0.001) == 41.9028
     assert pytest.approx(rome_item["longitude"], 0.001) == 12.4964
 
-def test_phase_4_albums_and_tags_crud(auth_header_phase_4):
-    headers, user_id = auth_header_phase_4
-    db = SessionLocal()
+
+def test_phase_4_albums_and_tags_crud(client, auth_headers, db):
+    user = db.query(User).filter(User.email == "test@example.com").first()
+    user_id = user.id
 
     source = Source(user_id=user_id, name="Test Drive", source_type="local_folder")
     db.add(source)
@@ -149,63 +122,62 @@ def test_phase_4_albums_and_tags_crud(auth_header_phase_4):
     db.commit()
     m1_id = m1.id
     m2_id = m2.id
-    db.close()
 
     # 1. Create Album
-    resp = client.post("/api/v1/albums", headers=headers, json={"name": "Vacanze 2025", "description": "Estate"})
+    resp = client.post("/api/v1/albums", headers=auth_headers, json={"name": "Vacanze 2025", "description": "Estate"})
     assert resp.status_code == 201
     album_id = resp.json()["id"]
     assert resp.json()["name"] == "Vacanze 2025"
 
     # 2. Add Media to Album
-    resp = client.post(f"/api/v1/albums/{album_id}/media", headers=headers, json={"media_ids": [m1_id]})
+    resp = client.post(f"/api/v1/albums/{album_id}/media", headers=auth_headers, json={"media_ids": [m1_id]})
     assert resp.status_code == 200
     assert resp.json()["added_count"] == 1
 
     # Verify Album list shows media_count = 1
-    resp = client.get("/api/v1/albums", headers=headers)
+    resp = client.get("/api/v1/albums", headers=auth_headers)
     assert resp.status_code == 200
     albums = resp.json()
     target_album = next(a for a in albums if a["id"] == album_id)
     assert target_album["media_count"] == 1
 
     # 3. Filter Media by Album
-    resp = client.get(f"/api/v1/media?album_id={album_id}", headers=headers)
+    resp = client.get(f"/api/v1/media?album_id={album_id}", headers=auth_headers)
     assert resp.status_code == 200
     album_media = resp.json()
     assert len(album_media) == 1
     assert album_media[0]["id"] == m1_id
 
     # 4. Create Tag
-    resp = client.post("/api/v1/tags", headers=headers, json={"name": "Preferiti", "color": "#f43f5e"})
+    resp = client.post("/api/v1/tags", headers=auth_headers, json={"name": "Preferiti", "color": "#f43f5e"})
     assert resp.status_code == 201
     tag_id = resp.json()["id"]
 
     # 5. Add Media to Tag
-    resp = client.post(f"/api/v1/tags/{tag_id}/media", headers=headers, json={"media_ids": [m1_id, m2_id]})
+    resp = client.post(f"/api/v1/tags/{tag_id}/media", headers=auth_headers, json={"media_ids": [m1_id, m2_id]})
     assert resp.status_code == 200
     assert resp.json()["added_count"] == 2
 
     # Filter Media by Tag
-    resp = client.get(f"/api/v1/media?tag_id={tag_id}", headers=headers)
+    resp = client.get(f"/api/v1/media?tag_id={tag_id}", headers=auth_headers)
     assert resp.status_code == 200
     assert len(resp.json()) == 2
 
     # 6. Check MediaDetail includes albums and tags
-    resp = client.get(f"/api/v1/media/{m1_id}", headers=headers)
+    resp = client.get(f"/api/v1/media/{m1_id}", headers=auth_headers)
     assert resp.status_code == 200
     detail = resp.json()
     assert any(a["id"] == album_id for a in detail["albums"])
     assert any(t["id"] == tag_id for t in detail["tags"])
 
     # 7. Remove media from tag and album
-    resp = client.delete(f"/api/v1/tags/{tag_id}/media/{m1_id}", headers=headers)
+    resp = client.delete(f"/api/v1/tags/{tag_id}/media/{m1_id}", headers=auth_headers)
     assert resp.status_code == 200
-    resp = client.delete(f"/api/v1/albums/{album_id}/media/{m1_id}", headers=headers)
+    resp = client.delete(f"/api/v1/albums/{album_id}/media/{m1_id}", headers=auth_headers)
     assert resp.status_code == 200
 
     # 8. Delete Tag and Album
-    resp = client.delete(f"/api/v1/tags/{tag_id}", headers=headers)
+    resp = client.delete(f"/api/v1/tags/{tag_id}", headers=auth_headers)
     assert resp.status_code == 204
-    resp = client.delete(f"/api/v1/albums/{album_id}", headers=headers)
+    resp = client.delete(f"/api/v1/albums/{album_id}", headers=auth_headers)
     assert resp.status_code == 204

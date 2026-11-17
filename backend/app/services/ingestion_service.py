@@ -30,10 +30,12 @@ def process_scan_batch(
 
     now = datetime.now(timezone.utc)
 
+    IGNORED_EXTENSIONS = {"aae", "xmp", "lrv", "thm", "dat", "ds_store", "db", "ini"}
+
     for item in batch_data.items:
         try:
             # Ignore sidecar and non-media system files
-            if item.extension and item.extension.lower() in {"aae", "dat", "ds_store", "db", "ini", "thm"}:
+            if item.extension and item.extension.lower() in IGNORED_EXTENSIONS:
                 continue
 
             # 1. Check if logical Media exists for this user and hash

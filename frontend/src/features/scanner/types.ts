@@ -13,6 +13,8 @@ export interface ExifMetadata {
   exposureTime?: number;
   iso?: number;
   lensModel?: string;
+  has_apple_edits?: boolean;
+  has_xmp_sidecar?: boolean;
   raw?: Record<string, unknown>;
 }
 

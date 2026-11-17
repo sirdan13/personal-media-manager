@@ -8,7 +8,7 @@ import { ScanError, ScannedFile, ScanProgress } from './types';
 export interface ScannerEngineOptions {
   concurrency?: number;
   generateThumbnails?: boolean;
-  fingerprints?: Record<string, { size_bytes: number; sha256: string }>;
+  fingerprints?: Record<string, { size_bytes: number; sha256: string; has_thumbnail?: boolean }>;
   onProgress?: (progress: ScanProgress) => void;
   onFileScanned?: (file: ScannedFile) => void;
   onError?: (error: ScanError) => void;
@@ -213,6 +213,7 @@ export class ScannerEngine {
     const known = this.options.fingerprints?.[relativePath];
     let sha256: string;
     let isIncrementalSkip = false;
+    const needsThumbnailBackfill = !!known && known.has_thumbnail === false;
 
     if (known && known.size_bytes === file.size && known.sha256) {
       sha256 = known.sha256;
@@ -229,14 +230,22 @@ export class ScannerEngine {
       this.seenHashes.set(sha256, relativePath);
     }
 
-    // 3. Extract metadata (can skip deep parsing if incremental skip)
-    const metadataResult = isIncrementalSkip
-      ? { capturedAt: undefined, modifiedAt: new Date(file.lastModified).toISOString(), width: undefined, height: undefined, duration: undefined, exif: {} }
-      : await extractMediaMetadata(file, mediaType);
+    // 3. Extract metadata (can skip deep parsing if incremental skip AND not backfilling)
+    const shouldExtractDetails = !isIncrementalSkip || needsThumbnailBackfill;
+    const metadataResult = shouldExtractDetails
+      ? await extractMediaMetadata(file, mediaType)
+      : { capturedAt: undefined, modifiedAt: new Date(file.lastModified).toISOString(), width: undefined, height: undefined, duration: undefined, exif: {} };
 
-    // 4. Generate thumbnail if requested and media is supported (skip if incremental skip)
+    if (item.hasAppleEdits) {
+      metadataResult.exif.has_apple_edits = true;
+    }
+    if (item.hasSidecarXmp) {
+      (metadataResult.exif as any).has_xmp_sidecar = true;
+    }
+
+    // 4. Generate thumbnail if requested and media is supported (generate even if incremental skip when needsThumbnailBackfill is true!)
     let thumbnailDataUrl: string | undefined = undefined;
-    if (this.options.generateThumbnails && !isIncrementalSkip) {
+    if (this.options.generateThumbnails && (!isIncrementalSkip || needsThumbnailBackfill)) {
       const thumb = await generateThumbnail(file, mediaType, metadataResult.exif.orientation);
       if (thumb) {
         thumbnailDataUrl = thumb.dataUrl;

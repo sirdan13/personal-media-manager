@@ -10,7 +10,8 @@ import {
   FileText,
   Folder,
   Tag as TagIcon,
-  Plus
+  Plus,
+  Play
 } from 'lucide-react';
 
 interface MediaDetailModalProps {
@@ -31,8 +32,12 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
   const [showNewTagInput, setShowNewTagInput] = useState(false);
   const [newTagName, setNewTagName] = useState('');
   const [newTagColor, setNewTagColor] = useState('#38bdf8');
+  const [isPlayingVideo, setIsPlayingVideo] = useState(false);
+  const [streamError, setStreamError] = useState<string | null>(null);
 
   useEffect(() => {
+    setIsPlayingVideo(false);
+    setStreamError(null);
     if (!mediaId) {
       setData(null);
       return;
@@ -149,6 +154,7 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
   };
 
   const primaryFile = data?.files && data.files.length > 0 ? data.files[0] : null;
+  const targetVideoMediaId = data?.media_type === 'video' ? data.id : (data?.is_live_photo && data?.live_video_media_id ? data.live_video_media_id : null);
 
   return (
     <div style={{
@@ -214,22 +220,109 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
             padding: '20px',
             position: 'relative'
           }}>
-            {data?.has_thumbnail ? (
-              <img
-                src={ApiClient.getThumbnailUrl(data.id)}
-                alt={primaryFile?.filename || 'Media'}
-                style={{
-                  maxHeight: '440px',
-                  maxWidth: '100%',
-                  objectFit: 'contain',
-                  borderRadius: '8px',
-                  boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
-                }}
-              />
+            {isPlayingVideo && targetVideoMediaId ? (
+              <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                <video
+                  controls
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  src={ApiClient.getMediaStreamUrl(targetVideoMediaId)}
+                  onError={() => setStreamError('Disco sorgente offline o file non accessibile dal server')}
+                  style={{
+                    maxHeight: '400px',
+                    maxWidth: '100%',
+                    borderRadius: '8px',
+                    boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
+                  }}
+                />
+                {streamError && (
+                  <div style={{ color: '#f43f5e', fontSize: '12px', marginTop: '8px', background: 'rgba(244, 63, 94, 0.1)', padding: '4px 8px', borderRadius: '4px' }}>
+                    {streamError}
+                  </div>
+                )}
+                <button
+                  onClick={() => setIsPlayingVideo(false)}
+                  style={{
+                    marginTop: '10px',
+                    background: '#334155',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Torna alla miniatura
+                </button>
+              </div>
+            ) : data?.has_thumbnail ? (
+              <>
+                <img
+                  src={ApiClient.getThumbnailUrl(data.id)}
+                  alt={primaryFile?.filename || 'Media'}
+                  style={{
+                    maxHeight: '440px',
+                    maxWidth: '100%',
+                    objectFit: 'contain',
+                    borderRadius: '8px',
+                    boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
+                  }}
+                />
+                {targetVideoMediaId && (
+                  <button
+                    onClick={() => { setStreamError(null); setIsPlayingVideo(true); }}
+                    style={{
+                      position: 'absolute',
+                      bottom: '20px',
+                      background: 'rgba(2, 132, 199, 0.95)',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '20px',
+                      padding: '8px 16px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+                      backdropFilter: 'blur(4px)'
+                    }}
+                  >
+                    <Play size={14} fill="white" />
+                    {data.is_live_photo ? 'Riproduci Live Photo (se disco online)' : 'Riproduci Video (se disco online)'}
+                  </button>
+                )}
+              </>
             ) : (
               <div style={{ textAlign: 'center', color: '#64748b' }}>
                 <FileText size={56} style={{ margin: '0 auto 12px' }} />
                 <div>Miniatura non generata sul server</div>
+                {targetVideoMediaId && (
+                  <button
+                    onClick={() => { setStreamError(null); setIsPlayingVideo(true); }}
+                    style={{
+                      marginTop: '16px',
+                      background: '#0284c7',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '8px 14px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <Play size={14} fill="white" />
+                    Riproduci Video (se disco online)
+                  </button>
+                )}
               </div>
             )}
           </div>

@@ -13,7 +13,7 @@ from app.services.media_service import (
     get_map_media
 )
 from app.api.deps import get_current_user
-from app.models.entities import User, Thumbnail, Media
+from app.models.entities import User, Thumbnail, Media, File, Source
 from app.core.config import settings
 
 router = APIRouter(prefix="/media", tags=["Libreria Media"])
@@ -104,4 +104,30 @@ def get_thumbnail(
         media_type=f"image/{thumb.format}",
         filename=f"{thumb.media_id[:12]}.{thumb.format}",
         headers={"Cache-Control": "public, max-age=604800"}
+    )
+
+@router.get("/{media_id}/stream")
+def stream_media(
+    media_id: str,
+    token: Optional[str] = Query(None),
+    db: Session = Depends(get_db)
+):
+    files = db.query(File, Source).join(Source, File.source_id == Source.id)\
+              .filter(File.media_id == media_id).all()
+    if not files:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media non trovato")
+
+    for f, s in files:
+        if s.root_path:
+            full_path = os.path.join(s.root_path, f.relative_path)
+            if os.path.isfile(full_path):
+                return FileResponse(
+                    path=full_path,
+                    media_type=f.mime_type or "application/octet-stream",
+                    filename=f.filename
+                )
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Disco offline o file non accessibile direttamente dal server"
     )
