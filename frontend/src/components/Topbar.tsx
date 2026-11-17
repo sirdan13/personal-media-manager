@@ -1,12 +1,13 @@
 import React from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, HelpCircle } from 'lucide-react';
 
 interface TopbarProps {
   currentTab: string;
   onOpenScanner: () => void;
+  onOpenTutorial?: () => void;
 }
 
-export const Topbar: React.FC<TopbarProps> = ({ currentTab, onOpenScanner }) => {
+export const Topbar: React.FC<TopbarProps> = ({ currentTab, onOpenScanner, onOpenTutorial }) => {
   const getTabTitle = (tab: string) => {
     switch (tab) {
       case 'dashboard': return 'Dashboard & Metriche';
@@ -40,7 +41,29 @@ export const Topbar: React.FC<TopbarProps> = ({ currentTab, onOpenScanner }) => 
         </h2>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        {onOpenTutorial && (
+          <button
+            onClick={onOpenTutorial}
+            style={{
+              background: 'rgba(56, 189, 248, 0.1)',
+              color: '#38bdf8',
+              border: '1px solid rgba(56, 189, 248, 0.3)',
+              borderRadius: '8px',
+              padding: '8px 14px',
+              fontSize: '13px',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer'
+            }}
+          >
+            <HelpCircle size={16} />
+            Guida & Tutorial
+          </button>
+        )}
+
         <button
           onClick={onOpenScanner}
           style={{

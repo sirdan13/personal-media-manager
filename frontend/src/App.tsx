@@ -9,10 +9,12 @@ import { DuplicatesView } from './features/duplicates/DuplicatesView';
 import { SourcesView } from './features/sources/SourcesView';
 import { ScansView } from './features/scans/ScansView';
 import { SettingsView } from './features/settings/SettingsView';
+import { TutorialModal } from './components/TutorialModal';
 
 export const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<any | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
   const [sourceToScan, setSourceToScan] = useState<any | null>(null);
   const [initializing, setInitializing] = useState(true);
@@ -83,6 +85,7 @@ export const App: React.FC = () => {
         <Topbar
           currentTab={currentTab}
           onOpenScanner={() => setCurrentTab('scans')}
+          onOpenTutorial={() => setIsTutorialOpen(true)}
         />
 
         <main style={{ flex: 1, padding: '32px', overflowY: 'auto' }}>
@@ -90,6 +93,7 @@ export const App: React.FC = () => {
             <DashboardView
               onNavigate={setCurrentTab}
               onOpenScanner={() => setCurrentTab('scans')}
+              onOpenTutorial={() => setIsTutorialOpen(true)}
             />
           )}
 
@@ -127,6 +131,12 @@ export const App: React.FC = () => {
           )}
         </main>
       </div>
+
+      {/* Tutorial Guide Modal */}
+      <TutorialModal
+        isOpen={isTutorialOpen}
+        onClose={() => setIsTutorialOpen(false)}
+      />
 
       {/* Auth Modal */}
       <AuthModal

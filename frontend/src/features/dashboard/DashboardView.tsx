@@ -10,7 +10,8 @@ import {
   Clock,
   CheckCircle,
   AlertTriangle,
-  FolderPlus
+  FolderPlus,
+  Sparkles
 } from 'lucide-react';
 
 interface DashboardStats {
@@ -25,9 +26,10 @@ interface DashboardStats {
 interface DashboardViewProps {
   onNavigate: (tab: string) => void;
   onOpenScanner: () => void;
+  onOpenTutorial?: () => void;
 }
 
-export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpenScanner }) => {
+export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpenScanner, onOpenTutorial }) => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [sources, setSources] = useState<any[]>([]);
   const [recentScans, setRecentScans] = useState<any[]>([]);
@@ -85,7 +87,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
             Centralizza l'indice delle tue fotografie e dei tuoi video conservando gli originali sui rispettivi dischi fisici.
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '12px' }}>
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          {onOpenTutorial && (
+            <button
+              onClick={onOpenTutorial}
+              style={{
+                background: 'rgba(56, 189, 248, 0.1)',
+                color: '#38bdf8',
+                border: '1px solid rgba(56, 189, 248, 0.3)',
+                borderRadius: '10px',
+                padding: '12px 18px',
+                fontSize: '14px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                cursor: 'pointer'
+              }}
+            >
+              <Sparkles size={18} />
+              Guida & Tutorial iPhone / Dischi
+            </button>
+          )}
           <button
             onClick={onOpenScanner}
             style={{

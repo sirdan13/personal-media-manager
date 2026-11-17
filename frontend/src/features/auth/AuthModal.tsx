@@ -104,6 +104,51 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onSuccess }) => {
           </p>
         </div>
 
+        {/* Mode Toggle Tabs */}
+        <div style={{
+          display: 'flex',
+          background: '#0f172a',
+          border: '1px solid #334155',
+          borderRadius: '8px',
+          padding: '3px',
+          marginBottom: '20px'
+        }}>
+          <button
+            type="button"
+            onClick={() => { setIsRegister(false); setError(null); }}
+            style={{
+              flex: 1,
+              padding: '8px',
+              borderRadius: '6px',
+              border: 'none',
+              background: !isRegister ? '#0284c7' : 'transparent',
+              color: !isRegister ? 'white' : '#94a3b8',
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            Accedi
+          </button>
+          <button
+            type="button"
+            onClick={() => { setIsRegister(true); setError(null); }}
+            style={{
+              flex: 1,
+              padding: '8px',
+              borderRadius: '6px',
+              border: 'none',
+              background: isRegister ? '#0284c7' : 'transparent',
+              color: isRegister ? 'white' : '#94a3b8',
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            Crea Nuovo Account
+          </button>
+        </div>
+
         {error && (
           <div style={{
             background: 'rgba(244, 63, 94, 0.1)',
