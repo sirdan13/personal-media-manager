@@ -52,7 +52,7 @@ export async function* traverseDirectoryHandle(
 
     if (entry.kind === 'file') {
       const ext = getFileExtension(entry.name);
-      if (isSupportedMedia(ext) || ext !== '') {
+      if (isSupportedMedia(ext)) {
         const fileHandle = entry as FileSystemFileHandle;
         try {
           const file = await fileHandle.getFile();
@@ -79,6 +79,9 @@ export function* traverseFileList(
 ): Generator<DiscoveredFileItem> {
   for (let i = 0; i < fileList.length; i++) {
     const file = fileList[i];
+    const ext = getFileExtension(file.name);
+    if (!isSupportedMedia(ext)) continue;
+
     const path = file.webkitRelativePath || file.name;
     // Strip root folder name from relative path if present for clean uniformity
     const slashIdx = path.indexOf('/');

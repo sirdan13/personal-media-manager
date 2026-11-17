@@ -45,7 +45,7 @@ fi
 echo "⚙️  [3/4] Avvio Backend FastAPI su http://127.0.0.1:8000..."
 cd "$BACKEND_DIR"
 source venv/bin/activate
-uvicorn app.main:app --host 127.0.0.1 --port 8000 > /tmp/pmm_backend.log 2>&1 &
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload > /tmp/pmm_backend.log 2>&1 &
 BACKEND_PID=$!
 
 cleanup() {

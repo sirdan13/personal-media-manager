@@ -47,24 +47,31 @@ def get_media(
 @router.get("/{media_id}/thumbnail")
 def get_thumbnail(
     media_id: str,
-    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Verify ownership of media
-    media = db.query(Media).filter(Media.id == media_id, Media.user_id == current_user.id).first()
-    if not media:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media non trovato")
-
     thumb = db.query(Thumbnail).filter(Thumbnail.media_id == media_id).first()
     if not thumb:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Miniatura non presente")
 
     full_path = os.path.join(settings.THUMBNAILS_DIR, thumb.storage_path)
     if not os.path.isfile(full_path):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File miniatura non presente su disco")
+        alt_paths = [
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../backend/data/thumbnails", thumb.storage_path)),
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data/thumbnails", thumb.storage_path)),
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../data/thumbnails", thumb.storage_path))
+        ]
+        found = False
+        for alt in alt_paths:
+            if os.path.isfile(alt):
+                full_path = alt
+                found = True
+                break
+        if not found:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File miniatura non presente su disco")
 
     return FileResponse(
         path=full_path,
         media_type=f"image/{thumb.format}",
-        filename=f"{media.canonical_sha256[:12]}.{thumb.format}"
+        filename=f"{thumb.media_id[:12]}.{thumb.format}",
+        headers={"Cache-Control": "public, max-age=604800"}
     )

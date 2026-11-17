@@ -2,7 +2,7 @@ import { MediaType } from './types';
 
 const IMAGE_EXTENSIONS = new Set([
   'jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'tiff', 'tif',
-  'heic', 'heif', 'avif', 'svg'
+  'heic', 'heif', 'avif', 'svg', 'dng', 'cr2', 'nef', 'arw'
 ]);
 
 const VIDEO_EXTENSIONS = new Set([
