@@ -73,6 +73,23 @@ export class ApiClient {
     });
   }
 
+  public static async toggleSourceStatus(sourceId: string) {
+    return this.request<any>(`/sources/${sourceId}/toggle-status`, {
+      method: 'POST'
+    });
+  }
+
+  public static async getSourceFingerprints(sourceId: string) {
+    return this.request<Record<string, { id: string; size_bytes: number; filesystem_modified_at: string; sha256: string; availability_status: string }>>(`/sources/${sourceId}/fingerprints`);
+  }
+
+  public static async reconcileSource(sourceId: string, seenPaths: string[]) {
+    return this.request<{ marked_missing: number; restored_available: number; total_active: number }>(`/sources/${sourceId}/reconcile`, {
+      method: 'POST',
+      body: JSON.stringify({ seen_paths: seenPaths })
+    });
+  }
+
   // Scans
   public static async getScans() {
     return this.request<any[]>('/scans');

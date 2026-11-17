@@ -261,18 +261,46 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <HardDrive size={14} color="#38bdf8" />
+                            <HardDrive size={14} color={f.source_status === 'offline' ? '#94a3b8' : '#38bdf8'} />
                             {f.source_name || 'Fonte'}
                           </span>
-                          <span style={{
-                            fontSize: '10px',
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                            background: f.source_status === 'online' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(148, 163, 184, 0.2)',
-                            color: f.source_status === 'online' ? '#22c55e' : '#94a3b8'
-                          }}>
-                            {f.source_status?.toUpperCase() || 'ONLINE'}
-                          </span>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            {f.source_status === 'offline' ? (
+                              <span style={{
+                                fontSize: '10px',
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                background: 'rgba(148, 163, 184, 0.2)',
+                                color: '#94a3b8',
+                                fontWeight: 600
+                              }}>
+                                DISCO OFFLINE
+                              </span>
+                            ) : (
+                              <span style={{
+                                fontSize: '10px',
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                background: 'rgba(34, 197, 94, 0.2)',
+                                color: '#22c55e',
+                                fontWeight: 600
+                              }}>
+                                DISCO ONLINE
+                              </span>
+                            )}
+                            {f.availability_status === 'missing' && (
+                              <span style={{
+                                fontSize: '10px',
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                background: 'rgba(244, 63, 94, 0.2)',
+                                color: '#f43f5e',
+                                fontWeight: 600
+                              }}>
+                                SPOSTATO / RIMOSSO
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <div style={{ color: '#94a3b8', fontSize: '11px', marginTop: '4px', wordBreak: 'break-all' }}>
                           <code>{f.relative_path}</code>

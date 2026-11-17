@@ -1,5 +1,6 @@
-from typing import List
-from fastapi import APIRouter, Depends, status
+from typing import List, Dict, Any
+from pydantic import BaseModel
+from fastapi import APIRouter, Depends, status, Body
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.schemas.source import SourceCreate, SourceUpdate, SourceOut
@@ -7,10 +8,15 @@ from app.services.source_service import (
     get_user_sources,
     get_source_by_id,
     create_source,
-    update_source
+    update_source,
+    get_source_file_fingerprints,
+    reconcile_source_files
 )
 from app.api.deps import get_current_user
 from app.models.entities import User
+
+class ReconcileRequest(BaseModel):
+    seen_paths: List[str]
 
 router = APIRouter(prefix="/sources", tags=["Fonti & Archivi"])
 
@@ -47,4 +53,32 @@ def patch_source(
     db: Session = Depends(get_db)
 ):
     source = update_source(db, current_user.id, source_id, source_in)
+    return SourceOut.model_validate(source)
+
+@router.get("/{source_id}/fingerprints")
+def get_fingerprints(
+    source_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return get_source_file_fingerprints(db, current_user.id, source_id)
+
+@router.post("/{source_id}/reconcile")
+def reconcile(
+    source_id: str,
+    payload: ReconcileRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return reconcile_source_files(db, current_user.id, source_id, payload.seen_paths)
+
+@router.post("/{source_id}/toggle-status", response_model=SourceOut)
+def toggle_status(
+    source_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    source = get_source_by_id(db, current_user.id, source_id)
+    new_status = "offline" if source.status != "offline" else "online"
+    source = update_source(db, current_user.id, source_id, SourceUpdate(status=new_status))
     return SourceOut.model_validate(source)

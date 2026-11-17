@@ -40,6 +40,15 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
     loadSources();
   }, []);
 
+  const handleToggleStatus = async (sourceId: string) => {
+    try {
+      await ApiClient.toggleSourceStatus(sourceId);
+      await loadSources();
+    } catch (err) {
+      console.error('Error toggling status:', err);
+    }
+  };
+
   const handleCreateSource = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
@@ -180,25 +189,44 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
                 </div>
               </div>
 
-              <button
-                onClick={() => onStartScanForSource(s)}
-                style={{
-                  background: '#334155',
-                  color: '#38bdf8',
-                  border: '1px solid #0284c7',
-                  borderRadius: '8px',
-                  padding: '10px',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px'
-                }}
-              >
-                <Play size={15} />
-                Avvia Scansione Fonte
-              </button>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                <button
+                  onClick={() => handleToggleStatus(s.id)}
+                  style={{
+                    flex: 1,
+                    background: s.status === 'online' ? '#334155' : 'rgba(34, 197, 94, 0.15)',
+                    color: s.status === 'online' ? '#94a3b8' : '#22c55e',
+                    border: '1px solid #475569',
+                    borderRadius: '8px',
+                    padding: '8px',
+                    fontSize: '12px',
+                    fontWeight: 600
+                  }}
+                >
+                  {s.status === 'online' ? 'Scollega' : 'Ricollega'}
+                </button>
+
+                <button
+                  onClick={() => onStartScanForSource(s)}
+                  style={{
+                    flex: 1,
+                    background: '#0284c7',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '8px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <Play size={13} />
+                  Scansiona
+                </button>
+              </div>
             </div>
           ))}
         </div>

@@ -8,6 +8,7 @@ import { ScanError, ScannedFile, ScanProgress } from './types';
 export interface ScannerEngineOptions {
   concurrency?: number;
   generateThumbnails?: boolean;
+  fingerprints?: Record<string, { size_bytes: number; sha256: string }>;
   onProgress?: (progress: ScanProgress) => void;
   onFileScanned?: (file: ScannedFile) => void;
   onError?: (error: ScanError) => void;
@@ -208,8 +209,17 @@ export class ScannerEngine {
     const mediaType = detectMediaType(ext);
     const mimeType = inferMimeType(file.name, file.type);
 
-    // 1. Compute SHA-256 in memory-safe chunks
-    const sha256 = await computeFileSHA256(file);
+    // 1. Incremental skip check: if file is known and size matches, reuse known hash
+    const known = this.options.fingerprints?.[relativePath];
+    let sha256: string;
+    let isIncrementalSkip = false;
+
+    if (known && known.size_bytes === file.size && known.sha256) {
+      sha256 = known.sha256;
+      isIncrementalSkip = true;
+    } else {
+      sha256 = await computeFileSHA256(file);
+    }
 
     // 2. Check for duplicate hash
     let isDuplicateOf: string | undefined = undefined;
@@ -219,12 +229,14 @@ export class ScannerEngine {
       this.seenHashes.set(sha256, relativePath);
     }
 
-    // 3. Extract metadata
-    const metadataResult = await extractMediaMetadata(file, mediaType);
+    // 3. Extract metadata (can skip deep parsing if incremental skip)
+    const metadataResult = isIncrementalSkip
+      ? { capturedAt: undefined, modifiedAt: new Date(file.lastModified).toISOString(), width: undefined, height: undefined, duration: undefined, exif: {} }
+      : await extractMediaMetadata(file, mediaType);
 
-    // 4. Generate thumbnail if requested and media is supported
+    // 4. Generate thumbnail if requested and media is supported (skip if incremental skip)
     let thumbnailDataUrl: string | undefined = undefined;
-    if (this.options.generateThumbnails) {
+    if (this.options.generateThumbnails && !isIncrementalSkip) {
       const thumb = await generateThumbnail(file, mediaType, metadataResult.exif.orientation);
       if (thumb) {
         thumbnailDataUrl = thumb.dataUrl;

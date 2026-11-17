@@ -189,7 +189,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' })
             <option value="">Tutte le Fonti</option>
             {sources.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.name} ({s.file_count || 0})
+                {s.name} {s.status === 'offline' ? '(Offline)' : `(${s.file_count || 0} file)`}
               </option>
             ))}
           </select>

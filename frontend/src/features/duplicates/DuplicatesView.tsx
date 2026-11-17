@@ -231,14 +231,35 @@ export const DuplicatesView: React.FC = () => {
                         </div>
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <HardDrive size={13} color="#38bdf8" />
-                            {file.source_name || 'Fonte'}
+                          <div style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>
+                            <HardDrive size={13} color={file.source_status === 'offline' ? '#94a3b8' : '#38bdf8'} />
+                            <span>{file.source_name || 'Fonte'}</span>
                           </div>
-                          <div style={{ color: '#64748b', fontSize: '10px' }}>
-                            {file.availability_status}
+                          <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end', marginTop: '4px' }}>
+                            <span style={{
+                              fontSize: '10px',
+                              padding: '1px 5px',
+                              borderRadius: '4px',
+                              background: file.source_status === 'offline' ? 'rgba(148, 163, 184, 0.2)' : 'rgba(34, 197, 94, 0.2)',
+                              color: file.source_status === 'offline' ? '#94a3b8' : '#22c55e',
+                              fontWeight: 600
+                            }}>
+                              {file.source_status === 'offline' ? 'OFFLINE' : 'ONLINE'}
+                            </span>
+                            {file.availability_status === 'missing' && (
+                              <span style={{
+                                fontSize: '10px',
+                                padding: '1px 5px',
+                                borderRadius: '4px',
+                                background: 'rgba(244, 63, 94, 0.2)',
+                                color: '#f43f5e',
+                                fontWeight: 600
+                              }}>
+                                NON TROVATO
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>

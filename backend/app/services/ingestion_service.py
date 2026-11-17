@@ -66,6 +66,8 @@ def process_scan_batch(
             meta_str = json.dumps(item.metadata_json) if item.metadata_json else None
 
             if existing_file:
+                old_media_id = existing_file.media_id if existing_file.media_id != media.id else None
+
                 # Update existing record
                 existing_file.media_id = media.id
                 existing_file.sha256 = item.sha256
@@ -81,6 +83,13 @@ def process_scan_batch(
                 existing_file.metadata_json = meta_str
                 existing_file.availability_status = "available"
                 existing_file.last_seen_at = now
+
+                # If file changed media and old media has no remaining copies, clean it up
+                if old_media_id:
+                    db.flush()
+                    remaining = db.query(File).filter(File.media_id == old_media_id).count()
+                    if remaining == 0:
+                        db.query(Media).filter(Media.id == old_media_id).delete()
             else:
                 new_file = File(
                     id=generate_uuid(),

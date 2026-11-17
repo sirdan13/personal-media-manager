@@ -61,3 +61,44 @@ def update_source(db: Session, user_id: str, source_id: str, source_in: SourceUp
     db.commit()
     db.refresh(source)
     return source
+
+def get_source_file_fingerprints(db: Session, user_id: str, source_id: str) -> dict:
+    get_source_by_id(db, user_id, source_id) # ownership check
+    files = db.query(File).filter(File.source_id == source_id).all()
+    fingerprints = {}
+    for f in files:
+        fingerprints[f.relative_path] = {
+            "id": f.id,
+            "size_bytes": f.size_bytes,
+            "filesystem_modified_at": f.filesystem_modified_at.isoformat() if f.filesystem_modified_at else None,
+            "sha256": f.sha256,
+            "availability_status": f.availability_status
+        }
+    return fingerprints
+
+def reconcile_source_files(db: Session, user_id: str, source_id: str, seen_paths: List[str]) -> dict:
+    get_source_by_id(db, user_id, source_id) # ownership check
+    seen_set = set(seen_paths)
+    
+    files = db.query(File).filter(File.source_id == source_id).all()
+    marked_missing = 0
+    restored_available = 0
+    total_active = 0
+
+    for f in files:
+        if f.relative_path not in seen_set:
+            if f.availability_status != "missing":
+                f.availability_status = "missing"
+                marked_missing += 1
+        else:
+            total_active += 1
+            if f.availability_status == "missing":
+                f.availability_status = "available"
+                restored_available += 1
+
+    db.commit()
+    return {
+        "marked_missing": marked_missing,
+        "restored_available": restored_available,
+        "total_active": total_active
+    }

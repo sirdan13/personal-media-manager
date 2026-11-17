@@ -77,11 +77,15 @@ export const ScansView: React.FC<ScansViewProps> = ({ selectedSourceForScan, onS
     try {
       setIsScanning(true);
 
-      // 1. Create scan job on backend
+      // 1. Fetch fingerprints for incremental scan optimization
+      const fingerprints = await ApiClient.getSourceFingerprints(selectedSourceId).catch(() => ({}));
+      const seenPaths: string[] = [];
+
+      // 2. Create scan job on backend
       const job = await ApiClient.startScan(selectedSourceId, 0);
       activeScanJobRef.current = job;
 
-      // 2. Setup batch buffer and engine
+      // 3. Setup batch buffer and engine
       let buffer: any[] = [];
       const BATCH_SIZE = 25; // Flush to backend every 25 files
 
@@ -103,8 +107,11 @@ export const ScansView: React.FC<ScansViewProps> = ({ selectedSourceForScan, onS
       const engine = new ScannerEngine({
         concurrency: 3,
         generateThumbnails: true,
+        fingerprints,
         onProgress: (p) => setProgress(p),
         onFileScanned: (file) => {
+          seenPaths.push(file.relativePath);
+
           // Push into batch buffer
           buffer.push({
             filename: file.name,
@@ -136,6 +143,13 @@ export const ScansView: React.FC<ScansViewProps> = ({ selectedSourceForScan, onS
 
       // Final batch flush
       await flushBatch();
+
+      // Reconcile missing/restored files for this source against currently seen paths
+      try {
+        await ApiClient.reconcileSource(selectedSourceId, seenPaths);
+      } catch (recErr) {
+        console.warn('Reconciliation error:', recErr);
+      }
 
       // Complete scan job on backend
       await ApiClient.completeScan(
