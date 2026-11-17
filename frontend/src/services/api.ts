@@ -154,4 +154,34 @@ export class ApiClient {
   public static getThumbnailUrl(mediaId: string): string {
     return `${API_BASE}/media/${mediaId}/thumbnail`;
   }
+
+  // Storage Optimization & Profile Settings
+  public static async getStorageSettings() {
+    return this.request<{
+      thumbnail_profile: string;
+      thumbnails_count: number;
+      total_bytes: number;
+      avg_kb: number;
+      available_profiles: Record<string, { max_edge: number; quality: number }>;
+    }>('/settings/storage');
+  }
+
+  public static async updateStorageProfile(thumbnailProfile: string) {
+    return this.request<{ message: string; thumbnail_profile: string }>('/settings/storage', {
+      method: 'PUT',
+      body: JSON.stringify({ thumbnail_profile: thumbnailProfile })
+    });
+  }
+
+  public static async compactStorage() {
+    return this.request<{
+      compacted_count: number;
+      before_bytes: number;
+      after_bytes: number;
+      saved_bytes: number;
+      profile_applied: string;
+    }>('/settings/storage/compact', {
+      method: 'POST'
+    });
+  }
 }

@@ -1,12 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.core.database import engine, Base
+from app.core.database import engine, Base, run_db_migrations
 from app.api.v1.router import api_router
 from app.models import entities  # Ensure models are imported for metadata creation
 
-# Create tables
+# Create tables and run non-destructive schema migrations
 Base.metadata.create_all(bind=engine)
+run_db_migrations(engine)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

@@ -19,6 +19,13 @@ class Settings(BaseSettings):
     STORAGE_DIR: str = "./data"
     THUMBNAILS_DIR: str = "./data/thumbnails"
     
+    # Thumbnail Profiles
+    THUMBNAIL_PROFILES: dict = {
+        "compact": {"max_edge": 240, "quality": 55},
+        "balanced": {"max_edge": 320, "quality": 65},
+        "high": {"max_edge": 384, "quality": 75},
+    }
+    
     # CORS
     CORS_ORIGINS: List[str] = [
         "http://localhost:5173",

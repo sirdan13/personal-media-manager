@@ -1,7 +1,7 @@
 import { MediaType } from './types';
 
-const MAX_THUMBNAIL_EDGE = 384;
-const THUMBNAIL_QUALITY = 0.75;
+const MAX_THUMBNAIL_EDGE = 320;
+const THUMBNAIL_QUALITY = 0.65;
 
 export interface GeneratedThumbnail {
   dataUrl: string;
@@ -225,20 +225,14 @@ async function canvasToThumbnail(
   width: number,
   height: number
 ): Promise<GeneratedThumbnail> {
-  return new Promise((resolve) => {
-    // Prefer WebP with fallback to JPEG
-    canvas.toBlob(
-      (blob) => {
-        const dataUrl = canvas.toDataURL('image/webp', THUMBNAIL_QUALITY);
-        resolve({
-          dataUrl,
-          blob: blob || undefined,
-          width,
-          height
-        });
-      },
-      'image/webp',
-      THUMBNAIL_QUALITY
-    );
-  });
+  // Prefer WebP with fallback to JPEG if WebP falls back to PNG (e.g. Safari/macOS WebKit)
+  let dataUrl = canvas.toDataURL('image/webp', THUMBNAIL_QUALITY);
+  if (dataUrl.startsWith('data:image/png')) {
+    dataUrl = canvas.toDataURL('image/jpeg', THUMBNAIL_QUALITY);
+  }
+  return {
+    dataUrl,
+    width,
+    height
+  };
 }

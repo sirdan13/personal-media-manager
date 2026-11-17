@@ -1,9 +1,11 @@
 import os
+import io
 import base64
 import json
 from datetime import datetime, timezone
+from PIL import Image, ImageOps
 from sqlalchemy.orm import Session
-from app.models.entities import Media, File, Thumbnail, generate_uuid
+from app.models.entities import Media, File, Thumbnail, User, generate_uuid
 from app.schemas.scan import ScanBatchRequest, ScanBatchResponse
 from app.services.scan_service import get_scan_job
 from app.core.config import settings
@@ -17,6 +19,10 @@ def process_scan_batch(
     job = get_scan_job(db, user_id, scan_id)
     source_id = job.source_id
 
+    # Retrieve user thumbnail profile
+    user = db.query(User).filter(User.id == user_id).first()
+    thumb_profile = getattr(user, "thumbnail_profile", "balanced") if user else "balanced"
+
     new_media_count = 0
     duplicate_instances_count = 0
     processed_count = 0
@@ -26,6 +32,10 @@ def process_scan_batch(
 
     for item in batch_data.items:
         try:
+            # Ignore sidecar and non-media system files
+            if item.extension and item.extension.lower() in {"aae", "dat", "ds_store", "db", "ini", "thm"}:
+                continue
+
             # 1. Check if logical Media exists for this user and hash
             media = db.query(Media).filter(
                 Media.user_id == user_id,
@@ -116,7 +126,7 @@ def process_scan_batch(
 
             # 3. Store Thumbnail on disk if provided and not yet stored
             if item.thumbnail_base64:
-                save_thumbnail(db, media.id, item.sha256, item.thumbnail_base64)
+                save_thumbnail(db, media.id, item.sha256, item.thumbnail_base64, profile=thumb_profile)
 
             processed_count += 1
             if batch_data.checkpoint_path:
@@ -137,18 +147,36 @@ def process_scan_batch(
         failed=failed_count
     )
 
-def save_thumbnail(db: Session, media_id: str, sha256: str, thumbnail_base64: str):
+def save_thumbnail(db: Session, media_id: str, sha256: str, thumbnail_base64: str, profile: str = "balanced"):
     # Check if thumbnail already saved
     existing_thumb = db.query(Thumbnail).filter(Thumbnail.media_id == media_id).first()
     if existing_thumb:
         return
 
     try:
-        # Strip data URL prefix if present (e.g. data:image/webp;base64,...)
+        # Strip data URL prefix if present (e.g. data:image/...;base64,...)
         if "," in thumbnail_base64:
             thumbnail_base64 = thumbnail_base64.split(",", 1)[1]
 
-        thumb_bytes = base64.b64decode(thumbnail_base64)
+        raw_bytes = base64.b64decode(thumbnail_base64)
+
+        # Profile parameters
+        prof = settings.THUMBNAIL_PROFILES.get(profile, settings.THUMBNAIL_PROFILES["balanced"])
+        max_edge = prof["max_edge"]
+        quality = prof["quality"]
+
+        # Decode, transpose orientation, convert to RGB, resize, and encode in true WebP
+        with Image.open(io.BytesIO(raw_bytes)) as img:
+            img = ImageOps.exif_transpose(img)
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+
+            img.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
+            real_w, real_h = img.size
+
+            buf = io.BytesIO()
+            img.save(buf, format="WEBP", quality=quality, method=4)
+            webp_bytes = buf.getvalue()
         
         # Partitioned directory structure: /data/thumbnails/ab/cd/abcdef...webp
         sub1 = sha256[:2]
@@ -161,16 +189,16 @@ def save_thumbnail(db: Session, media_id: str, sha256: str, thumbnail_base64: st
         rel_storage_path = os.path.join(sub1, sub2, filename)
 
         with open(file_path, "wb") as f:
-            f.write(thumb_bytes)
+            f.write(webp_bytes)
 
         thumb = Thumbnail(
             id=generate_uuid(),
             media_id=media_id,
             storage_path=rel_storage_path,
             format="webp",
-            width=384,
-            height=256,
-            size_bytes=len(thumb_bytes)
+            width=real_w,
+            height=real_h,
+            size_bytes=len(webp_bytes)
         )
         db.add(thumb)
     except Exception as e:

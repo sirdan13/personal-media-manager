@@ -30,18 +30,23 @@ except ImportError:
     HAS_PILLOW = False
 
 CHUNK_SIZE = 64 * 1024  # 64 KB streaming blocks
-THUMBNAIL_MAX_DIMENSION = 384
-SUPPORTED_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".heic"}
+THUMBNAIL_PROFILES = {
+    "compact": (240, 55),
+    "balanced": (320, 65),
+    "high": (384, 75)
+}
+SUPPORTED_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".heic", ".dng"}
 SUPPORTED_VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
 SUPPORTED_EXTS = SUPPORTED_IMAGE_EXTS | SUPPORTED_VIDEO_EXTS
-IGNORED_DIR_NAMES = {".git", ".svn", "__pycache__", "node_modules", "venv", ".DS_Store", "@eaDir"}
+IGNORED_DIR_NAMES = {".git", ".svn", "__pycache__", "node_modules", "venv", ".DS_Store", "@eaDir", ".Spotlight-V100", ".Trashes"}
 
 
 class ScannerAgent:
-    def __init__(self, server_url: str, email: str, password: str):
+    def __init__(self, server_url: str, email: str, password: str, thumb_profile: str = "balanced"):
         self.server_url = server_url.rstrip("/")
         self.email = email
         self.password = password
+        self.thumb_profile = thumb_profile
         self.token: Optional[str] = None
         self.session = requests.Session()
 
@@ -159,10 +164,11 @@ class ScannerAgent:
                 elif thumb_img.mode != "RGB":
                     thumb_img = thumb_img.convert("RGB")
 
-                thumb_img.thumbnail((THUMBNAIL_MAX_DIMENSION, THUMBNAIL_MAX_DIMENSION), Image.Resampling.LANCZOS)
+                max_edge, quality = THUMBNAIL_PROFILES.get(self.thumb_profile, (320, 65))
+                thumb_img.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
                 
                 buf = io.BytesIO()
-                thumb_img.save(buf, format="WEBP", quality=80)
+                thumb_img.save(buf, format="WEBP", quality=quality, method=4)
                 thumb_base64 = f"data:image/webp;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"
 
         except Exception as e:
@@ -432,6 +438,7 @@ def main():
     parser.add_argument("--source-name", required=True, help="Friendly name for this source / drive")
     parser.add_argument("--path", required=True, help="Path to local folder or mount point to scan")
     parser.add_argument("--batch-size", type=int, default=50, help="Batch size for HTTP uploads (default: 50)")
+    parser.add_argument("--thumb-profile", choices=["compact", "balanced", "high"], default="balanced", help="Thumbnail compression profile (default: balanced)")
     parser.add_argument("--no-incremental", action="store_true", help="Force recalculation of all hashes (disable fast skip)")
     parser.add_argument("--no-reconcile", action="store_true", help="Skip reconciliation of missing/removed files")
 
@@ -440,7 +447,8 @@ def main():
     agent = ScannerAgent(
         server_url=args.server,
         email=args.email,
-        password=args.password
+        password=args.password,
+        thumb_profile=args.thumb_profile
     )
     agent.run(
         folder_path=args.path,
