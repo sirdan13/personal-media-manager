@@ -74,6 +74,10 @@ export class ApiClient {
   }
 
   // Scans
+  public static async getScans() {
+    return this.request<any[]>('/scans');
+  }
+
   public static async startScan(sourceId: string, totalFilesDiscovered = 0) {
     return this.request<any>(`/scans/${sourceId}/start`, {
       method: 'POST',
@@ -104,11 +108,19 @@ export class ApiClient {
     return this.request<any>('/media/dashboard/stats');
   }
 
-  public static async getMedia(params: { mediaType?: string; sourceId?: string; search?: string; offset?: number; limit?: number } = {}) {
+  public static async getMedia(params: {
+    mediaType?: string;
+    sourceId?: string;
+    search?: string;
+    sortBy?: string;
+    offset?: number;
+    limit?: number;
+  } = {}) {
     const q = new URLSearchParams();
     if (params.mediaType) q.set('media_type', params.mediaType);
     if (params.sourceId) q.set('source_id', params.sourceId);
     if (params.search) q.set('search', params.search);
+    if (params.sortBy) q.set('sort_by', params.sortBy);
     if (params.offset !== undefined) q.set('offset', String(params.offset));
     if (params.limit !== undefined) q.set('limit', String(params.limit));
     return this.request<any[]>(`/media?${q.toString()}`);

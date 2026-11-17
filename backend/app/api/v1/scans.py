@@ -1,3 +1,4 @@
+from typing import List
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -8,12 +9,24 @@ from app.schemas.scan import (
     ScanCompleteRequest,
     ScanJobOut
 )
-from app.services.scan_service import start_scan_job, get_scan_job, complete_scan_job
+from app.services.scan_service import (
+    start_scan_job,
+    get_scan_job,
+    complete_scan_job,
+    list_user_scan_jobs
+)
 from app.services.ingestion_service import process_scan_batch
 from app.api.deps import get_current_user
 from app.models.entities import User
 
 router = APIRouter(prefix="/scans", tags=["Scansione & Ingestione"])
+
+@router.get("", response_model=List[ScanJobOut])
+def list_scans(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return list_user_scan_jobs(db, current_user.id)
 
 @router.post("/{source_id}/start", response_model=ScanJobOut, status_code=status.HTTP_201_CREATED)
 def start_scan(

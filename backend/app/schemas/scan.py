@@ -39,6 +39,7 @@ class ScanCompleteRequest(BaseModel):
 class ScanJobOut(BaseModel):
     id: str
     source_id: str
+    source_name: Optional[str] = None
     status: str
     total_files_discovered: int
     processed_files: int

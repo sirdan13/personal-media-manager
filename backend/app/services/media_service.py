@@ -1,6 +1,6 @@
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, asc
 from fastapi import HTTPException, status
 from app.models.entities import Media, File, Source, Thumbnail, ScanJob
 from app.schemas.media import MediaOut, MediaDetailOut, FileOut, DuplicateGroupOut
@@ -11,13 +11,16 @@ def list_user_media(
     media_type: Optional[str] = None,
     source_id: Optional[str] = None,
     search: Optional[str] = None,
+    sort_by: str = "date_desc",
     offset: int = 0,
     limit: int = 50
 ) -> List[MediaOut]:
     query = db.query(
         Media,
         func.count(File.id).label("copies_count"),
-        func.count(Thumbnail.id).label("thumb_count")
+        func.count(Thumbnail.id).label("thumb_count"),
+        func.min(File.filename).label("primary_filename"),
+        func.max(File.size_bytes).label("primary_size")
     ).outerjoin(File, Media.id == File.media_id)\
      .outerjoin(Thumbnail, Media.id == Thumbnail.media_id)\
      .filter(Media.user_id == user_id)
@@ -31,11 +34,25 @@ def list_user_media(
     if search:
         query = query.filter(File.filename.ilike(f"%{search}%"))
 
-    query = query.group_by(Media.id).order_by(desc(Media.captured_at), desc(Media.created_at))
+    query = query.group_by(Media.id)
+
+    if sort_by == "date_asc":
+        query = query.order_by(asc(Media.captured_at), asc(Media.created_at))
+    elif sort_by == "name_asc":
+        query = query.order_by(asc(func.min(File.filename)))
+    elif sort_by == "name_desc":
+        query = query.order_by(desc(func.min(File.filename)))
+    elif sort_by == "size_desc":
+        query = query.order_by(desc(func.max(File.size_bytes)))
+    elif sort_by == "size_asc":
+        query = query.order_by(asc(func.max(File.size_bytes)))
+    else: # date_desc
+        query = query.order_by(desc(Media.captured_at), desc(Media.created_at))
+
     rows = query.offset(offset).limit(limit).all()
 
     results = []
-    for media, copies_count, thumb_count in rows:
+    for media, copies_count, thumb_count, p_filename, p_size in rows:
         results.append(MediaOut(
             id=media.id,
             user_id=media.user_id,
@@ -47,6 +64,8 @@ def list_user_media(
             duration_seconds=media.duration_seconds,
             copies_count=copies_count,
             has_thumbnail=thumb_count > 0,
+            primary_filename=p_filename,
+            primary_size_bytes=p_size,
             created_at=media.created_at
         ))
     return results

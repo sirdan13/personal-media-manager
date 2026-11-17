@@ -35,6 +35,8 @@ class MediaOut(BaseModel):
     duration_seconds: Optional[float] = None
     copies_count: int = 1
     has_thumbnail: bool = False
+    primary_filename: Optional[str] = None
+    primary_size_bytes: Optional[int] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

@@ -1,8 +1,23 @@
 from datetime import datetime, timezone
+from typing import List
 from sqlalchemy.orm import Session
+from sqlalchemy import desc
 from fastapi import HTTPException, status
-from app.models.entities import ScanJob, ScanHistory, generate_uuid
+from app.models.entities import ScanJob, ScanHistory, Source, generate_uuid
+from app.schemas.scan import ScanJobOut
 from app.services.source_service import get_source_by_id
+
+def list_user_scan_jobs(db: Session, user_id: str) -> List[ScanJobOut]:
+    jobs = db.query(ScanJob, Source.name)\
+             .join(Source, ScanJob.source_id == Source.id)\
+             .filter(Source.user_id == user_id)\
+             .order_by(desc(ScanJob.started_at)).all()
+    results = []
+    for job, src_name in jobs:
+        out = ScanJobOut.model_validate(job)
+        out.source_name = src_name
+        results.append(out)
+    return results
 
 def start_scan_job(db: Session, user_id: str, source_id: str, total_files_discovered: int = 0) -> ScanJob:
     source = get_source_by_id(db, user_id, source_id)
