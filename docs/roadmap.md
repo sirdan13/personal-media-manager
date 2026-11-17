@@ -58,21 +58,22 @@ flowchart TD
 - [x] Sezione dedicata ai duplicati esatti con calcolo dello spazio ridondante recuperabile.
 
 ### Milestone 4 – Deduplicazione Avanzata e Gestione Fonti Offline
-- [ ] Vista raggruppata per duplicati esatti (SHA-256 identico su fonti differenti o percorsi diversi).
-- [ ] Confronto affiancato delle copie fisiche (percorso, disco, dimensione, integrità).
-- [ ] Gestione fonti offline (fonti scollegate rimangono visibili nel catalogo con badge chiaro e miniature consultabili).
-- [ ] Riconciliazione automatica alla riconnessione della fonte.
-- [ ] Ripresa garantita delle scansioni interrotte senza ri-elaborazione dei file già salvati.
+- [x] Vista raggruppata per duplicati esatti (SHA-256 identico su fonti differenti o percorsi diversi).
+- [x] Confronto affiancato delle copie fisiche (percorso, disco, dimensione, integrità, stato online/offline).
+- [x] Gestione fonti offline (fonti scollegate rimangono visibili nel catalogo con badge chiaro e miniature consultabili).
+- [x] Riconciliazione automatica alla riconnessione della fonte (`/reconcile` rileva file rimossi o ripristinati).
+- [x] Ripresa garantita e scansione incrementale veloce (impronte digitali size+mtime evitano ricalcolo hash su file invariati).
 
 ### Milestone 5 – Agente Locale Headless (Opzionale)
-- [ ] CLI/Daemon Python per scansioni su server locali, NAS o dischi di rete non gestibili via browser.
-- [ ] Integrazione con ExifTool per estrazione esaustiva metadati RAW e video.
-- [ ] Utilizzo delle stesse API di ingestione del backend.
+- [x] CLI/Daemon Python per scansioni su server locali, NAS o dischi di rete non gestibili via browser (`agent/scanner_agent.py`).
+- [x] Integrazione Pillow per estrazione metadati EXIF, orientamento automatico e generazione miniature WebP.
+- [x] Utilizzo delle stesse API di ingestione del backend (`/start`, `/batch`, `/reconcile`, `/complete`).
+- [x] Test suite automatizzata completa (`backend/app/tests/test_agent.py`).
 
 ### Milestone 6 – Distribuzione e Packaging
-- [ ] Dockerfile multi-stage ottimizzati per frontend e backend.
-- [ ] `docker-compose.yml` completo di volumi persistenti per database e miniature.
-- [ ] Documentazione di installazione, configurazione `.env.example` e strategie di backup.
+- [x] Dockerfile multi-stage ottimizzati per frontend (Node 20 + Nginx Alpine) e backend (Python 3.12 slim).
+- [x] `docker-compose.yml` completo di volumi persistenti per database SQLite e miniature.
+- [x] Documentazione di installazione, configurazione `.env.example` e strategie di backup a caldo (`docs/deployment.md`).
 
 ---
 

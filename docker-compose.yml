@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile.backend
+    container_name: pmm-backend
+    restart: unless-stopped
+    environment:
+      - DATABASE_PATH=/data/media.db
+      - THUMBNAILS_DIR=/data/thumbnails
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-pmm-secure-token-secret-change-in-production-2026}
+      - JWT_ALGORITHM=HS256
+      - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=43200
+      - HOST=0.0.0.0
+      - PORT=8000
+    volumes:
+      - pmm_data:/data
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile.frontend
+    container_name: pmm-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  pmm_data:
+    driver: local
