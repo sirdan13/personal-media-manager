@@ -1,5 +1,6 @@
 import os
-from typing import List, Optional
+import platform
+from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from fastapi import HTTPException, status
@@ -140,4 +141,113 @@ def reconcile_source_files(db: Session, user_id: str, source_id: str, seen_paths
         "marked_missing": marked_missing,
         "restored_available": restored_available,
         "total_active": total_active
+    }
+
+def browse_server_filesystem(requested_path: Optional[str] = None) -> Dict[str, Any]:
+    is_mac = platform.system() == "Darwin"
+    
+    # 1. Discover mounted volumes / external drives
+    volumes = []
+    if is_mac and os.path.exists("/Volumes"):
+        try:
+            for item in sorted(os.listdir("/Volumes")):
+                if item.startswith("."):
+                    continue
+                full = os.path.join("/Volumes", item)
+                if os.path.isdir(full) and item != "Recovery":
+                    is_system = os.path.islink(full) and os.path.realpath(full) == "/"
+                    volumes.append({
+                        "name": item,
+                        "path": full,
+                        "is_removable": not is_system,
+                        "type": "internal_drive" if is_system else "external_drive"
+                    })
+        except Exception:
+            pass
+    elif os.name == "nt":
+        import string
+        from ctypes import windll
+        try:
+            bitmask = windll.kernel32.GetLogicalDrives()
+            for letter in string.ascii_uppercase:
+                if bitmask & 1:
+                    drive_path = f"{letter}:\\"
+                    volumes.append({
+                        "name": f"Disco ({letter}:)",
+                        "path": drive_path,
+                        "is_removable": False,
+                        "type": "drive"
+                    })
+                bitmask >>= 1
+        except Exception:
+            pass
+    else:
+        for base in ["/media", "/mnt"]:
+            if os.path.exists(base):
+                try:
+                    for item in sorted(os.listdir(base)):
+                        full = os.path.join(base, item)
+                        if os.path.isdir(full) and not item.startswith("."):
+                            volumes.append({
+                                "name": item,
+                                "path": full,
+                                "is_removable": True,
+                                "type": "external_drive"
+                            })
+                except Exception:
+                    pass
+
+    # 2. Useful user home shortcuts
+    home_dir = os.path.expanduser("~")
+    user_shortcuts = []
+    for folder_name, label in [
+        ("Pictures", "Immagini"),
+        ("Movies", "Filmati"),
+        ("Documents", "Documenti"),
+        ("Downloads", "Download"),
+        ("Desktop", "Scrivania")
+    ]:
+        folder_path = os.path.join(home_dir, folder_name)
+        if os.path.exists(folder_path) and os.path.isdir(folder_path):
+            user_shortcuts.append({
+                "name": label,
+                "path": folder_path,
+                "type": "user_folder"
+            })
+
+    # 3. Determine target directory
+    if not requested_path or not os.path.exists(requested_path):
+        target_path = "/Volumes" if (is_mac and os.path.exists("/Volumes")) else home_dir
+    else:
+        target_path = os.path.abspath(requested_path)
+
+    # 4. List subdirectories
+    subdirectories = []
+    try:
+        if os.path.isdir(target_path):
+            for item in sorted(os.listdir(target_path), key=lambda x: x.lower()):
+                if item.startswith(".") or item in ["$RECYCLE.BIN", "System Volume Information", "Recovery"]:
+                    continue
+                full_sub = os.path.join(target_path, item)
+                try:
+                    if os.path.isdir(full_sub) and not os.path.islink(full_sub):
+                        subdirectories.append({
+                            "name": item,
+                            "path": full_sub
+                        })
+                except (PermissionError, OSError):
+                    pass
+    except (PermissionError, OSError):
+        pass
+
+    parent_path = os.path.dirname(target_path) if target_path not in ("/", "/Volumes") else None
+    if target_path == "/Volumes":
+        parent_path = None
+
+    return {
+        "current_path": target_path,
+        "parent_path": parent_path,
+        "subdirectories": subdirectories,
+        "volumes": volumes,
+        "user_shortcuts": user_shortcuts
     }

@@ -85,6 +85,17 @@ export class ApiClient {
     });
   }
 
+  public static async browseFilesystem(path?: string) {
+    const query = path ? `?path=${encodeURIComponent(path)}` : '';
+    return this.request<{
+      current_path: string;
+      parent_path: string | null;
+      subdirectories: { name: string; path: string }[];
+      volumes: { name: string; path: string; is_removable: boolean; type: string }[];
+      user_shortcuts: { name: string; path: string; type: string }[];
+    }>(`/sources/browse/filesystem${query}`);
+  }
+
   public static async getSourceFingerprints(sourceId: string) {
     return this.request<Record<string, { id: string; size_bytes: number; filesystem_modified_at: string; sha256: string; availability_status: string }>>(`/sources/${sourceId}/fingerprints`);
   }

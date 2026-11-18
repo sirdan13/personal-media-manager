@@ -5,7 +5,15 @@ import {
   FolderPlus,
   Play,
   X,
-  Trash2
+  Trash2,
+  FolderSearch,
+  Folder,
+  ChevronRight,
+  ArrowLeft,
+  Info,
+  Check,
+  Laptop,
+  HelpCircle
 } from 'lucide-react';
 
 interface SourcesViewProps {
@@ -20,6 +28,67 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
   const [sourceType, setSourceType] = useState('browser_folder');
   const [rootPath, setRootPath] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // Filesystem explorer & guide state
+  const [showExplorer, setShowExplorer] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
+  const [fsLoading, setFsLoading] = useState(false);
+  const [fsData, setFsData] = useState<{
+    current_path: string;
+    parent_path: string | null;
+    subdirectories: { name: string; path: string }[];
+    volumes: { name: string; path: string; is_removable: boolean; type: string }[];
+    user_shortcuts: { name: string; path: string; type: string }[];
+  } | null>(null);
+
+  const loadFsPath = async (targetPath?: string) => {
+    try {
+      setFsLoading(true);
+      const res = await ApiClient.browseFilesystem(targetPath);
+      setFsData(res);
+    } catch (err) {
+      console.error('Error browsing filesystem:', err);
+    } finally {
+      setFsLoading(false);
+    }
+  };
+
+  const handleOpenCreateModal = () => {
+    setIsModalOpen(true);
+    setName('');
+    setRootPath('');
+    setSourceType('browser_folder');
+    setShowExplorer(false);
+    setShowGuide(false);
+    loadFsPath(); // Pre-fetch available volumes & shortcuts
+  };
+
+  const handleSelectPath = (selectedPath: string, suggestedName?: string, isVolume: boolean = false) => {
+    setRootPath(selectedPath);
+    if (!name.trim() && suggestedName) {
+      setName(suggestedName);
+    }
+    if (isVolume) {
+      setSourceType('external_drive');
+    }
+  };
+
+  const handlePickBrowserFolder = async () => {
+    if ('showDirectoryPicker' in window) {
+      try {
+        const handle = await (window as any).showDirectoryPicker();
+        if (handle && handle.name) {
+          if (!name.trim()) setName(handle.name);
+          setRootPath(handle.name);
+          setSourceType('browser_folder');
+        }
+      } catch (err) {
+        // User cancelled picker
+      }
+    } else {
+      alert('Il tuo browser attuale non supporta la selezione diretta tramite cartella di sistema. Usa il pulsante Sfoglia Dischi del Mac o inserisci il percorso.');
+    }
+  };
 
   const loadSources = async () => {
     if (!ApiClient.getToken()) {
@@ -102,7 +171,7 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
         </div>
 
         <button
-          onClick={() => setIsModalOpen(true)}
+          onClick={handleOpenCreateModal}
           style={{
             background: '#0284c7',
             color: 'white',
@@ -289,7 +358,9 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
             border: '1px solid #334155',
             borderRadius: '16px',
             width: '100%',
-            maxWidth: '440px',
+            maxWidth: '520px',
+            maxHeight: '90vh',
+            overflowY: 'auto',
             padding: '24px',
             boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
           }}>
@@ -297,13 +368,13 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
               <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>Registra Nuova Fonte</h3>
               <button
                 onClick={() => setIsModalOpen(false)}
-                style={{ background: 'transparent', border: 'none', color: '#94a3b8' }}
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
               >
                 <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleCreateSource} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <form onSubmit={handleCreateSource} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
                 <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>
                   Nome Identificativo della Fonte *
@@ -311,7 +382,7 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
                 <input
                   type="text"
                   required
-                  placeholder="Es. Hard Disk Esterno WD 4TB"
+                  placeholder="Es. Hard Disk Esterno WD 4TB o SSD 512"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   style={{
@@ -350,25 +421,379 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
                 </select>
               </div>
 
+              {/* Box 3: Percorso o Montaggio con Explorer e Guida */}
               <div>
-                <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>
-                  Etichetta Percorso o Montaggio (Opzionale)
-                </label>
-                <input
-                  type="text"
-                  placeholder="Es. /Volumes/WD_4TB/Foto o Archivio_2022"
-                  value={rootPath}
-                  onChange={(e) => setRootPath(e.target.value)}
-                  style={{
-                    width: '100%',
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '12px', color: '#94a3b8' }}>
+                    Etichetta Percorso o Montaggio (Opzionale)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowGuide(!showGuide)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#38bdf8',
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    <HelpCircle size={12} />
+                    {showGuide ? 'Nascondi Guida' : 'Come scegliere?'}
+                  </button>
+                </div>
+
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="text"
+                    placeholder="Es. /Volumes/SSD_512_Sam/DL o Foto_2024"
+                    value={rootPath}
+                    onChange={(e) => setRootPath(e.target.value)}
+                    style={{
+                      width: '100%',
+                      background: '#0f172a',
+                      border: '1px solid #334155',
+                      borderRadius: '8px',
+                      padding: '10px 12px',
+                      color: 'white',
+                      fontSize: '13px'
+                    }}
+                  />
+                </div>
+
+                {/* Pulsanti Rapidi Sfoglia ed Explorer */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!showExplorer && !fsData) loadFsPath();
+                      setShowExplorer(!showExplorer);
+                    }}
+                    style={{
+                      background: showExplorer ? '#0284c7' : 'rgba(56, 189, 248, 0.1)',
+                      color: showExplorer ? 'white' : '#38bdf8',
+                      border: '1px solid rgba(56, 189, 248, 0.3)',
+                      borderRadius: '6px',
+                      padding: '6px 10px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <FolderSearch size={13} />
+                    {showExplorer ? 'Chiudi Esplora Dischi' : '🔍 Sfoglia Dischi & Cartelle Mac'}
+                  </button>
+
+                  {'showDirectoryPicker' in window && (
+                    <button
+                      type="button"
+                      onClick={handlePickBrowserFolder}
+                      style={{
+                        background: 'rgba(148, 163, 184, 0.1)',
+                        color: '#94a3b8',
+                        border: '1px solid #475569',
+                        borderRadius: '6px',
+                        padding: '6px 10px',
+                        fontSize: '11px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <Folder size={13} />
+                      Scegli dal Computer (Browser)
+                    </button>
+                  )}
+                </div>
+
+                {/* Dischi esterni rimovibili rilevati automaticamente */}
+                {fsData?.volumes && fsData.volumes.filter(v => v.is_removable).length > 0 && (
+                  <div style={{ marginTop: '10px' }}>
+                    <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '4px' }}>
+                      Dischi esterni collegati al Mac:
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {fsData.volumes.filter(v => v.is_removable).map((vol) => (
+                        <button
+                          key={vol.path}
+                          type="button"
+                          onClick={() => handleSelectPath(vol.path, vol.name, true)}
+                          style={{
+                            background: rootPath.startsWith(vol.path) ? 'rgba(34, 197, 94, 0.15)' : 'rgba(30, 41, 59, 0.9)',
+                            border: `1px solid ${rootPath.startsWith(vol.path) ? '#22c55e' : '#475569'}`,
+                            color: rootPath.startsWith(vol.path) ? '#22c55e' : 'white',
+                            borderRadius: '6px',
+                            padding: '5px 9px',
+                            fontSize: '11px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <HardDrive size={13} color={rootPath.startsWith(vol.path) ? '#22c55e' : '#38bdf8'} />
+                          <strong>{vol.name}</strong>
+                          <span style={{ color: '#94a3b8', fontSize: '10px' }}>({vol.path})</span>
+                          {rootPath.startsWith(vol.path) && <Check size={12} />}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Guida / Spiegazione */}
+                {showGuide && (
+                  <div style={{
+                    background: 'rgba(56, 189, 248, 0.08)',
+                    border: '1px solid rgba(56, 189, 248, 0.25)',
+                    borderRadius: '8px',
+                    padding: '12px',
+                    marginTop: '10px',
+                    fontSize: '11px',
+                    color: '#cbd5e1',
+                    lineHeight: '1.6'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#38bdf8', fontWeight: 600, marginBottom: '6px' }}>
+                      <Info size={14} /> Come inserire il percorso corretto:
+                    </div>
+                    <div>
+                      • <strong>Dischi Esterni USB o SSD (Mac)</strong>: Su macOS tutti i dischi esterni si trovano nella cartella <code>/Volumes/</code> (es. <code>/Volumes/SSD_512_Sam</code>). Clicca su <em>"Sfoglia Dischi"</em> per selezionarli all'istante.<br />
+                      • <strong>Copia percorso da macOS Finder</strong>: Apri Finder, fai clic destro sul disco o sulla cartella tenendo premuto il tasto <code>Opzione (⌥)</code> e clicca su <em>"Copia [nome] come percorso"</em>. Poi incollalo qui.<br />
+                      • <strong>Scansione da Browser (es. Safari/Chrome su iPhone o Mac)</strong>: Se scansionerai i file direttamente selezionandoli dalla schermata di scansione, questo campo è opzionale e serve solo da etichetta identificativa.
+                    </div>
+                  </div>
+                )}
+
+                {/* File Explorer integrato nel Modal */}
+                {showExplorer && (
+                  <div style={{
                     background: '#0f172a',
                     border: '1px solid #334155',
-                    borderRadius: '8px',
-                    padding: '10px 12px',
-                    color: 'white',
-                    fontSize: '13px'
-                  }}
-                />
+                    borderRadius: '10px',
+                    padding: '12px',
+                    marginTop: '10px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px'
+                  }}>
+                    {/* Intestazione e Navigazione Percorso */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                        {fsData?.parent_path && (
+                          <button
+                            type="button"
+                            onClick={() => loadFsPath(fsData.parent_path!)}
+                            title="Cartella Superiore"
+                            style={{
+                              background: '#1e293b',
+                              border: '1px solid #475569',
+                              color: 'white',
+                              borderRadius: '6px',
+                              padding: '4px 8px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              fontSize: '11px'
+                            }}
+                          >
+                            <ArrowLeft size={12} />
+                            Su
+                          </button>
+                        )}
+                        <span style={{ fontSize: '11px', color: '#94a3b8', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                          {fsData?.current_path || '/Volumes'}
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (fsData?.current_path) {
+                            handleSelectPath(fsData.current_path, fsData.current_path.split('/').pop(), false);
+                            setShowExplorer(false);
+                          }
+                        }}
+                        style={{
+                          background: '#0284c7',
+                          border: 'none',
+                          color: 'white',
+                          borderRadius: '6px',
+                          padding: '4px 10px',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        ✓ Usa Questa Cartella
+                      </button>
+                    </div>
+
+                    {/* Scorciatoie Dischi / Volumi */}
+                    {fsData?.volumes && fsData.volumes.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: '10px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600, marginBottom: '4px' }}>
+                          Dischi Rilevati
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {fsData.volumes.map((v) => (
+                            <button
+                              key={v.path}
+                              type="button"
+                              onClick={() => loadFsPath(v.path)}
+                              style={{
+                                background: fsData.current_path === v.path ? 'rgba(56, 189, 248, 0.2)' : '#1e293b',
+                                border: `1px solid ${fsData.current_path === v.path ? '#38bdf8' : '#334155'}`,
+                                color: fsData.current_path === v.path ? '#38bdf8' : 'white',
+                                borderRadius: '6px',
+                                padding: '4px 8px',
+                                fontSize: '11px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              {v.is_removable ? <HardDrive size={12} color="#38bdf8" /> : <Laptop size={12} color="#94a3b8" />}
+                              <span>{v.name}</span>
+                              <ChevronRight size={10} color="#64748b" />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Scorciatoie Utente Mac */}
+                    {fsData?.user_shortcuts && fsData.user_shortcuts.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: '10px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600, marginBottom: '4px' }}>
+                          Cartelle Personali Mac
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {fsData.user_shortcuts.map((u) => (
+                            <button
+                              key={u.path}
+                              type="button"
+                              onClick={() => loadFsPath(u.path)}
+                              style={{
+                                background: fsData.current_path === u.path ? 'rgba(56, 189, 248, 0.2)' : '#1e293b',
+                                border: `1px solid ${fsData.current_path === u.path ? '#38bdf8' : '#334155'}`,
+                                color: fsData.current_path === u.path ? '#38bdf8' : 'white',
+                                borderRadius: '6px',
+                                padding: '4px 8px',
+                                fontSize: '11px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <Folder size={12} color="#f59e0b" />
+                              <span>{u.name}</span>
+                              <ChevronRight size={10} color="#64748b" />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Lista Sottocartelle navigabili */}
+                    <div>
+                      <div style={{ fontSize: '10px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600, marginBottom: '4px' }}>
+                        Cartelle in {fsData?.current_path ? fsData.current_path.split('/').pop() || fsData.current_path : 'questo percorso'}:
+                      </div>
+
+                      {fsLoading ? (
+                        <div style={{ fontSize: '11px', color: '#94a3b8', padding: '10px 0', textAlign: 'center' }}>
+                          Caricamento cartelle in corso...
+                        </div>
+                      ) : fsData?.subdirectories && fsData.subdirectories.length > 0 ? (
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+                          gap: '6px',
+                          maxHeight: '160px',
+                          overflowY: 'auto',
+                          paddingRight: '4px'
+                        }}>
+                          {fsData.subdirectories.map((dir) => (
+                            <div
+                              key={dir.path}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                background: '#1e293b',
+                                border: '1px solid #334155',
+                                borderRadius: '6px',
+                                padding: '4px 8px'
+                              }}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => loadFsPath(dir.path)}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: 'white',
+                                  fontSize: '11px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  cursor: 'pointer',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                  flex: 1,
+                                  textAlign: 'left'
+                                }}
+                              >
+                                <Folder size={13} color="#38bdf8" style={{ flexShrink: 0 }} />
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {dir.name}
+                                </span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleSelectPath(dir.path, dir.name, false);
+                                  setShowExplorer(false);
+                                }}
+                                title="Seleziona questa cartella"
+                                style={{
+                                  background: 'rgba(34, 197, 94, 0.15)',
+                                  border: '1px solid rgba(34, 197, 94, 0.3)',
+                                  color: '#22c55e',
+                                  borderRadius: '4px',
+                                  padding: '2px 5px',
+                                  fontSize: '10px',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  marginLeft: '4px',
+                                  flexShrink: 0
+                                }}
+                              >
+                                Scegli
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '11px', color: '#64748b', fontStyle: 'italic', padding: '6px 0' }}>
+                          Nessuna sottocartella trovata in questa cartella.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
@@ -381,7 +806,8 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
                     border: 'none',
                     borderRadius: '8px',
                     padding: '10px 16px',
-                    fontSize: '13px'
+                    fontSize: '13px',
+                    cursor: 'pointer'
                   }}
                 >
                   Annulla
@@ -396,7 +822,8 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
                     borderRadius: '8px',
                     padding: '10px 18px',
                     fontSize: '13px',
-                    fontWeight: 600
+                    fontWeight: 600,
+                    cursor: 'pointer'
                   }}
                 >
                   {saving ? 'Salvataggio...' : 'Crea Fonte'}

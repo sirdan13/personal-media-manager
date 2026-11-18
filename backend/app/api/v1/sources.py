@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, status, Body
 from sqlalchemy.orm import Session
@@ -11,7 +11,8 @@ from app.services.source_service import (
     update_source,
     delete_source,
     get_source_file_fingerprints,
-    reconcile_source_files
+    reconcile_source_files,
+    browse_server_filesystem
 )
 from app.api.deps import get_current_user
 from app.models.entities import User
@@ -20,6 +21,16 @@ class ReconcileRequest(BaseModel):
     seen_paths: List[str]
 
 router = APIRouter(prefix="/sources", tags=["Fonti & Archivi"])
+
+@router.get("/browse/filesystem")
+def browse_filesystem(
+    path: Optional[str] = None,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Browse directories and detected mounted volumes on the server (Mac/host).
+    """
+    return browse_server_filesystem(path)
 
 @router.get("", response_model=List[SourceOut])
 def list_sources(
