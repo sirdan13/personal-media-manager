@@ -33,6 +33,7 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
   const [showExplorer, setShowExplorer] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [fsLoading, setFsLoading] = useState(false);
+  const [fsError, setFsError] = useState<string | null>(null);
   const [fsData, setFsData] = useState<{
     current_path: string;
     parent_path: string | null;
@@ -44,10 +45,12 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
   const loadFsPath = async (targetPath?: string) => {
     try {
       setFsLoading(true);
+      setFsError(null);
       const res = await ApiClient.browseFilesystem(targetPath);
       setFsData(res);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error browsing filesystem:', err);
+      setFsError(err?.message || 'Errore nel caricamento dei dischi');
     } finally {
       setFsLoading(false);
     }
@@ -60,6 +63,7 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
     setSourceType('browser_folder');
     setShowExplorer(false);
     setShowGuide(false);
+    setFsError(null);
     loadFsPath(); // Pre-fetch available volumes & shortcuts
   };
 
@@ -583,6 +587,36 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
                     flexDirection: 'column',
                     gap: '10px'
                   }}>
+                    {fsError && (
+                      <div style={{
+                        padding: '8px 12px',
+                        background: 'rgba(239, 68, 68, 0.1)',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        borderRadius: '6px',
+                        color: '#f87171',
+                        fontSize: '11px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                      }}>
+                        <span>{fsError}</span>
+                        <button
+                          type="button"
+                          onClick={() => loadFsPath(fsData?.current_path)}
+                          style={{
+                            background: '#ef4444',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            padding: '3px 8px',
+                            fontSize: '10px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Riprova
+                        </button>
+                      </div>
+                    )}
                     {/* Intestazione e Navigazione Percorso */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
