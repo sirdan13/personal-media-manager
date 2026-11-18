@@ -23,7 +23,11 @@ interface MapMediaItem {
   media_type: string;
 }
 
-export const MapView: React.FC = () => {
+interface MapViewProps {
+  onNavigateToLocation?: (lat: number, lon: number, radiusKm?: number) => void;
+}
+
+export const MapView: React.FC<MapViewProps> = ({ onNavigateToLocation }) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const [mapMedia, setMapMedia] = useState<MapMediaItem[]>([]);
@@ -31,15 +35,21 @@ export const MapView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [selectedMediaId, setSelectedMediaId] = useState<string | null>(null);
 
-  // Expose function to window so popup onclick can call it
+  // Expose functions to window so popup onclick can call them
   useEffect(() => {
     (window as any).__openMediaDetail = (id: string) => {
       setSelectedMediaId(id);
     };
+    (window as any).__viewPhotosAtLocation = (lat: number, lon: number) => {
+      if (onNavigateToLocation) {
+        onNavigateToLocation(lat, lon, 3); // 3 km radius default
+      }
+    };
     return () => {
       delete (window as any).__openMediaDetail;
+      delete (window as any).__viewPhotosAtLocation;
     };
-  }, []);
+  }, [onNavigateToLocation]);
 
   useEffect(() => {
     const fetchGeotaggedMedia = async () => {
@@ -68,9 +78,9 @@ export const MapView: React.FC = () => {
         zoomControl: true,
       });
 
-      // CartoDB Voyager tile layer (clean, dark/modern friendly)
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      // OpenStreetMap standard tile layer (100% free, no API key required)
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
         maxZoom: 19,
       }).addTo(map);
 
@@ -110,17 +120,25 @@ export const MapView: React.FC = () => {
             <div style="font-size: 11px; color: #64748b; margin-top: 2px;">
               ${formattedDate}
             </div>
-            <button
-              onclick="window.__openMediaDetail('${item.id}')"
-              style="margin-top: 8px; width: 100%; background: #0284c7; color: white; border: none; border-radius: 4px; padding: 5px 8px; font-size: 11px; font-weight: 600; cursor: pointer;"
-            >
-              Apri Dettaglio
-            </button>
+            <div style="display: flex; gap: 6px; margin-top: 8px;">
+              <button
+                onclick="window.__openMediaDetail('${item.id}')"
+                style="flex: 1; background: #334155; color: white; border: none; border-radius: 4px; padding: 5px 6px; font-size: 11px; font-weight: 600; cursor: pointer;"
+              >
+                Dettaglio
+              </button>
+              <button
+                onclick="window.__viewPhotosAtLocation(${item.latitude}, ${item.longitude})"
+                style="flex: 1; background: #0284c7; color: white; border: none; border-radius: 4px; padding: 5px 6px; font-size: 11px; font-weight: 600; cursor: pointer;"
+              >
+                Tutte le foto qui
+              </button>
+            </div>
           </div>
         `;
 
         const marker = L.marker(latLng).addTo(map);
-        marker.bindPopup(popupContent, { maxWidth: 220 });
+        marker.bindPopup(popupContent, { maxWidth: 240 });
       });
 
       map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });

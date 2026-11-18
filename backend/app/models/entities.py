@@ -88,6 +88,8 @@ class Media(Base):
     dhash = Column(String(16), nullable=True, index=True)
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
+    place_name = Column(String(255), nullable=True, index=True)
+    is_favorite = Column(Integer, nullable=False, default=0, index=True)
     created_at = Column(DateTime, default=utc_now, nullable=False)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 

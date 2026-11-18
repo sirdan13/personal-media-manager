@@ -1,3 +1,4 @@
+import os
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -10,6 +11,23 @@ def get_user_sources(db: Session, user_id: str) -> List[SourceOut]:
     results = []
     for s in sources:
         count = db.query(func.count(File.id)).filter(File.source_id == s.id).scalar() or 0
+        
+        # Real-time physical mount check for external drives / local folders with a root_path
+        computed_status = s.status
+        if s.root_path and s.source_type in ("external_drive", "local_folder", "network_share"):
+            is_physically_present = os.path.exists(s.root_path)
+            # If path doesn't exist on server/Mac, it is physically OFFLINE
+            if not is_physically_present:
+                computed_status = "offline"
+                if s.status != "offline":
+                    s.status = "offline"
+                    db.commit()
+            elif is_physically_present and s.status == "offline":
+                # Automatically restore to online when plugged back in
+                computed_status = "online"
+                s.status = "online"
+                db.commit()
+
         s_out = SourceOut(
             id=s.id,
             user_id=s.user_id,
@@ -18,7 +36,7 @@ def get_user_sources(db: Session, user_id: str) -> List[SourceOut]:
             source_type=s.source_type,
             root_path=s.root_path,
             persistent_identifier=s.persistent_identifier,
-            status=s.status,
+            status=computed_status,
             created_at=s.created_at,
             last_scanned_at=s.last_scanned_at,
             file_count=count
@@ -61,6 +79,24 @@ def update_source(db: Session, user_id: str, source_id: str, source_in: SourceUp
     db.commit()
     db.refresh(source)
     return source
+
+def delete_source(db: Session, user_id: str, source_id: str) -> None:
+    source = get_source_by_id(db, user_id, source_id)
+    # Get all media_ids linked to files in this source
+    affected_media_ids = [r[0] for r in db.query(File.media_id).filter(File.source_id == source.id).distinct().all()]
+
+    # Delete the source (cascades to scan_jobs and files)
+    db.delete(source)
+    db.commit()
+
+    # Clean up orphan media entities that have no remaining physical files anywhere
+    if affected_media_ids:
+        orphans = db.query(Media.id).outerjoin(File, Media.id == File.media_id)\
+                    .filter(Media.id.in_(affected_media_ids), File.id.is_(None)).all()
+        orphan_ids = [o[0] for o in orphans]
+        if orphan_ids:
+            db.query(Media).filter(Media.id.in_(orphan_ids)).delete(synchronize_session=False)
+            db.commit()
 
 def get_source_file_fingerprints(db: Session, user_id: str, source_id: str) -> dict:
     get_source_by_id(db, user_id, source_id) # ownership check

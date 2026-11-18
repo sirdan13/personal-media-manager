@@ -10,7 +10,9 @@ from app.services.media_service import (
     get_media_detail,
     get_dashboard_stats,
     get_timeline_buckets,
-    get_map_media
+    get_map_media,
+    toggle_media_favorite,
+    batch_set_favorite
 )
 from app.api.deps import get_current_user
 from app.models.entities import User, Thumbnail, Media, File, Source
@@ -22,10 +24,15 @@ router = APIRouter(prefix="/media", tags=["Libreria Media"])
 def get_media_list(
     media_type: Optional[str] = Query(None, description="Filtro per image o video"),
     source_id: Optional[str] = Query(None, description="Filtro per fonte specifica"),
-    search: Optional[str] = Query(None, description="Ricerca nel nome file"),
+    search: Optional[str] = Query(None, description="Ricerca stile Apple (nome, fotocamera, modello, lente, cartella, tag, anno)"),
     album_id: Optional[str] = Query(None, description="Filtro per album"),
     tag_id: Optional[str] = Query(None, description="Filtro per tag"),
     month_key: Optional[str] = Query(None, description="Filtro per mese (YYYY-MM)"),
+    is_favorite: Optional[bool] = Query(None, description="Filtro solo preferiti"),
+    lat_min: Optional[float] = Query(None, description="Latitudine minima per filtro geografico"),
+    lat_max: Optional[float] = Query(None, description="Latitudine massima per filtro geografico"),
+    lon_min: Optional[float] = Query(None, description="Longitudine minima per filtro geografico"),
+    lon_max: Optional[float] = Query(None, description="Longitudine massima per filtro geografico"),
     sort_by: str = Query("date_desc", description="Ordinamento: date_desc, date_asc, name_asc, name_desc, size_desc, size_asc"),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
@@ -40,10 +47,35 @@ def get_media_list(
         album_id=album_id,
         tag_id=tag_id,
         month_key=month_key,
+        is_favorite=is_favorite,
+        lat_min=lat_min,
+        lat_max=lat_max,
+        lon_min=lon_min,
+        lon_max=lon_max,
         sort_by=sort_by,
         offset=offset,
         limit=limit
     )
+
+@router.post("/{media_id}/favorite")
+def toggle_favorite(
+    media_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    is_fav = toggle_media_favorite(db, current_user.id, media_id)
+    return {"id": media_id, "is_favorite": is_fav}
+
+@router.post("/batch/favorite")
+def batch_favorite(
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    media_ids = payload.get("media_ids", [])
+    is_fav = bool(payload.get("is_favorite", True))
+    updated_count = batch_set_favorite(db, current_user.id, media_ids, is_fav)
+    return {"updated_count": updated_count, "is_favorite": is_fav}
 
 @router.get("/dashboard/stats")
 def get_stats(

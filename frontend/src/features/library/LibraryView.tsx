@@ -8,16 +8,34 @@ import {
   Copy,
   FolderOpen,
   Calendar,
-  Grid as GridIcon
+  Grid as GridIcon,
+  Heart,
+  CheckSquare,
+  Square,
+  Play
 } from 'lucide-react';
 import { isRawExtension } from '../scanner/formatDetector';
 import { MediaDetailModal } from './MediaDetailModal';
 
 interface LibraryViewProps {
   initialType?: string; // 'all' | 'image' | 'video'
+  initialFavorite?: boolean;
+  initialGeoFilter?: {
+    latMin: number;
+    latMax: number;
+    lonMin: number;
+    lonMax: number;
+    label?: string;
+  } | null;
+  onClearGeoFilter?: () => void;
 }
 
-export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' }) => {
+export const LibraryView: React.FC<LibraryViewProps> = ({
+  initialType = 'all',
+  initialFavorite = false,
+  initialGeoFilter = null,
+  onClearGeoFilter
+}) => {
   const [viewMode, setViewMode] = useState<'grid' | 'timeline'>('grid');
   const [mediaList, setMediaList] = useState<any[]>([]);
   const [sources, setSources] = useState<any[]>([]);
@@ -29,8 +47,10 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' })
   const [selectedAlbum, setSelectedAlbum] = useState<string>('');
   const [selectedTag, setSelectedTag] = useState<string>('');
   const [selectedMonthKey, setSelectedMonthKey] = useState<string>('');
+  const [onlyFavorites, setOnlyFavorites] = useState<boolean>(initialFavorite);
   const [mediaType, setMediaType] = useState<string>(initialType === 'all' ? '' : initialType);
   const [search, setSearch] = useState<string>('');
+  const [geoFilter, setGeoFilter] = useState<{ latMin: number; latMax: number; lonMin: number; lonMax: number; label?: string } | null>(initialGeoFilter);
   const [sortBy, setSortBy] = useState<string>('date_desc');
   const [offset, setOffset] = useState<number>(0);
   const [limit] = useState<number>(60);
@@ -38,12 +58,25 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' })
   const [loading, setLoading] = useState<boolean>(false);
   const [selectedMediaId, setSelectedMediaId] = useState<string | null>(null);
 
-  // Sync initialType when tab changes
+  // Batch selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isSelectionMode, setIsSelectionMode] = useState<boolean>(false);
+  const [hoveredLiveMediaId, setHoveredLiveMediaId] = useState<string | null>(null);
+
+  // Sync initialType and geoFilter when props change
   useEffect(() => {
     setMediaType(initialType === 'all' ? '' : initialType);
+    setOnlyFavorites(initialFavorite);
     setOffset(0);
     setMediaList([]);
-  }, [initialType]);
+    setSelectedIds(new Set());
+  }, [initialType, initialFavorite]);
+
+  useEffect(() => {
+    setGeoFilter(initialGeoFilter);
+    setOffset(0);
+    setMediaList([]);
+  }, [initialGeoFilter]);
 
   // Load sources, albums, tags, and timeline buckets on mount
   useEffect(() => {
@@ -67,6 +100,11 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' })
           albumId: selectedAlbum || undefined,
           tagId: selectedTag || undefined,
           monthKey: selectedMonthKey || undefined,
+          isFavorite: onlyFavorites ? true : undefined,
+          latMin: geoFilter?.latMin,
+          latMax: geoFilter?.latMax,
+          lonMin: geoFilter?.lonMin,
+          lonMax: geoFilter?.lonMax,
           sortBy,
           offset,
           limit
@@ -86,10 +124,77 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' })
     };
 
     fetchMedia();
-  }, [mediaType, selectedSource, search, selectedAlbum, selectedTag, selectedMonthKey, sortBy, offset, limit]);
+  }, [mediaType, selectedSource, search, selectedAlbum, selectedTag, selectedMonthKey, onlyFavorites, geoFilter, sortBy, offset, limit]);
 
   const handleFilterChange = () => {
     setOffset(0);
+  };
+
+  const handleToggleFavorite = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    try {
+      const res = await ApiClient.toggleFavorite(id);
+      setMediaList((prev) => prev.map((m) => m.id === id ? { ...m, is_favorite: res.is_favorite } : m));
+    } catch (err) {
+      alert((err as Error).message);
+    }
+  };
+
+  const handleToggleSelect = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === mediaList.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(mediaList.map((m) => m.id)));
+    }
+  };
+
+  const handleBatchFavorite = async (makeFavorite: boolean) => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    try {
+      await ApiClient.batchFavorite(ids, makeFavorite);
+      setMediaList((prev) => prev.map((m) => ids.includes(m.id) ? { ...m, is_favorite: makeFavorite } : m));
+      setSelectedIds(new Set());
+      setIsSelectionMode(false);
+    } catch (err) {
+      alert((err as Error).message);
+    }
+  };
+
+  const handleBatchAddToAlbum = async (albumId: string) => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0 || !albumId) return;
+    try {
+      await ApiClient.addMediaToAlbum(albumId, ids);
+      alert(`Aggiunti ${ids.length} elementi all'album!`);
+      setSelectedIds(new Set());
+      setIsSelectionMode(false);
+    } catch (err) {
+      alert((err as Error).message);
+    }
+  };
+
+  const handleBatchAddToTag = async (tagId: string) => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0 || !tagId) return;
+    try {
+      await ApiClient.addMediaToTag(tagId, ids);
+      alert(`Aggiunto il tag a ${ids.length} elementi!`);
+      setSelectedIds(new Set());
+      setIsSelectionMode(false);
+    } catch (err) {
+      alert((err as Error).message);
+    }
   };
 
   const formatBytes = (bytes?: number) => {
@@ -122,24 +227,44 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' })
   const renderMediaCard = (media: any) => {
     const fileExt = media.primary_extension || (media.primary_filename ? media.primary_filename.split('.').pop() || '' : '');
     const isRaw = fileExt ? isRawExtension(fileExt) : false;
+    const isSelected = selectedIds.has(media.id);
+    const isHoveredLive = hoveredLiveMediaId === media.id;
+    const liveVideoId = media.is_live_photo && media.live_video_media_id ? media.live_video_media_id : null;
 
     return (
     <div
       key={media.id}
-      onClick={() => setSelectedMediaId(media.id)}
+      onClick={(e) => {
+        if (isSelectionMode) {
+          handleToggleSelect(e, media.id);
+        } else {
+          setSelectedMediaId(media.id);
+        }
+      }}
+      onMouseEnter={() => {
+        if (media.is_live_photo && liveVideoId) {
+          setHoveredLiveMediaId(media.id);
+        }
+      }}
+      onMouseLeave={() => {
+        if (hoveredLiveMediaId === media.id) {
+          setHoveredLiveMediaId(null);
+        }
+      }}
       style={{
         background: '#1e293b',
-        border: media.copies_count > 1 ? '1px solid #f59e0b' : '1px solid #334155',
+        border: isSelected ? '2px solid #38bdf8' : (media.copies_count > 1 ? '1px solid #f59e0b' : '1px solid #334155'),
         borderRadius: '10px',
         overflow: 'hidden',
         cursor: 'pointer',
         display: 'flex',
         flexDirection: 'column',
+        position: 'relative',
         transition: 'transform 0.15s ease, border-color 0.15s ease'
       }}
     >
-      {/* Thumbnail Container */}
-      <div style={{
+      {/* Thumbnail / Video Container */}
+      <div className="media-card-thumb" style={{
         height: '170px',
         background: '#090d16',
         display: 'flex',
@@ -148,7 +273,20 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' })
         position: 'relative',
         overflow: 'hidden'
       }}>
-        {media.has_thumbnail ? (
+        {isHoveredLive && liveVideoId ? (
+          <video
+            autoPlay
+            loop
+            muted
+            playsInline
+            src={ApiClient.getMediaStreamUrl(liveVideoId)}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover'
+            }}
+          />
+        ) : media.has_thumbnail ? (
           <img
             src={ApiClient.getThumbnailUrl(media.id)}
             alt={media.primary_filename || 'Thumbnail'}
@@ -165,13 +303,60 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' })
           </div>
         )}
 
+        {/* Selection Checkbox */}
+        {(isSelectionMode || isSelected) && (
+          <div
+            onClick={(e) => handleToggleSelect(e, media.id)}
+            style={{
+              position: 'absolute',
+              top: '8px',
+              left: '8px',
+              background: isSelected ? '#0284c7' : 'rgba(15, 23, 42, 0.7)',
+              borderRadius: '6px',
+              padding: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'white',
+              cursor: 'pointer',
+              zIndex: 10
+            }}
+          >
+            {isSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+          </div>
+        )}
+
+        {/* Favorite Heart Button */}
+        <button
+          onClick={(e) => handleToggleFavorite(e, media.id)}
+          style={{
+            position: 'absolute',
+            top: '8px',
+            right: '8px',
+            background: media.is_favorite ? 'rgba(244, 63, 94, 0.9)' : 'rgba(15, 23, 42, 0.6)',
+            border: 'none',
+            borderRadius: '50%',
+            width: '28px',
+            height: '28px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'white',
+            cursor: 'pointer',
+            zIndex: 10,
+            transition: 'background 0.15s ease'
+          }}
+        >
+          <Heart size={14} fill={media.is_favorite ? 'white' : 'none'} color="white" />
+        </button>
+
         {/* Live Photo badge */}
         {media.is_live_photo && (
           <span style={{
             position: 'absolute',
-            top: '8px',
-            left: '8px',
-            background: 'rgba(236, 72, 153, 0.9)',
+            bottom: '8px',
+            right: '8px',
+            background: isHoveredLive ? '#22c55e' : 'rgba(236, 72, 153, 0.9)',
             color: 'white',
             fontSize: '10px',
             fontWeight: 700,
@@ -183,6 +368,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' })
             boxShadow: '0 2px 4px rgba(0,0,0,0.5)',
             letterSpacing: '0.5px'
           }}>
+            {isHoveredLive ? <Play size={10} fill="white" /> : null}
             LIVE
           </span>
         )}
@@ -191,8 +377,8 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' })
         {isRaw && (
           <span style={{
             position: 'absolute',
-            top: '8px',
-            left: media.is_live_photo ? '56px' : '8px',
+            bottom: '8px',
+            left: '8px',
             background: '#f59e0b',
             color: '#0f172a',
             fontSize: '10px',
@@ -214,7 +400,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' })
           <span style={{
             position: 'absolute',
             top: '8px',
-            right: '8px',
+            right: '42px',
             background: '#f59e0b',
             color: 'black',
             fontSize: '10px',
@@ -230,26 +416,6 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' })
             {media.copies_count} COPIE
           </span>
         )}
-
-        {/* Resolution / duration badge */}
-        <span style={{
-          position: 'absolute',
-          bottom: '8px',
-          left: '8px',
-          background: 'rgba(15, 23, 42, 0.75)',
-          backdropFilter: 'blur(4px)',
-          color: 'white',
-          fontSize: '10px',
-          padding: '2px 6px',
-          borderRadius: '4px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px'
-        }}>
-          {media.media_type === 'video' && <Video size={10} color="#a855f7" />}
-          {media.width && media.height ? `${media.width}×${media.height}` : media.media_type.toUpperCase()}
-          {media.duration_seconds ? ` • ${media.duration_seconds}s` : ''}
-        </span>
       </div>
 
       {/* Media Details Footer */}
@@ -264,6 +430,18 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' })
         }}>
           {media.primary_filename || 'File senza nome'}
         </div>
+
+        {media.place_name && (
+          <div style={{
+            fontSize: '11px',
+            color: '#38bdf8',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis'
+          }}>
+            📍 {media.place_name}
+          </div>
+        )}
 
         <div style={{
           display: 'flex',
@@ -282,8 +460,44 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' })
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      {/* Top Filter Bar */}
-      <div style={{
+      {/* Active Geo Filter Pill if coming from Map */}
+      {geoFilter && (
+        <div style={{
+          background: 'rgba(2, 132, 199, 0.15)',
+          border: '1px solid #0284c7',
+          borderRadius: '8px',
+          padding: '10px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          color: '#38bdf8',
+          fontSize: '13px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>📍 Filtrato per posizione: <strong>{geoFilter.label || 'Area Geografica Selezionata sulla Mappa'}</strong></span>
+          </div>
+          <button
+            onClick={() => {
+              setGeoFilter(null);
+              if (onClearGeoFilter) onClearGeoFilter();
+              handleFilterChange();
+            }}
+            style={{
+              background: '#0284c7',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              padding: '4px 10px',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            Rimuovi Filtro Mappa
+          </button>
+        </div>
+      )}
+      <div className="filter-bar-container" style={{
         background: '#1e293b',
         border: '1px solid #334155',
         borderRadius: '12px',
@@ -295,11 +509,11 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' })
         gap: '16px'
       }}>
         {/* Search input */}
-        <div style={{ position: 'relative', flex: '1 1 240px' }}>
+        <div className="filter-search-box" style={{ position: 'relative', flex: '1 1 280px' }}>
           <Search size={16} color="#64748b" style={{ position: 'absolute', left: '12px', top: '11px' }} />
           <input
             type="text"
-            placeholder="Cerca per nome file..."
+            placeholder="Cerca foto, fotocamera, modello, lente, tag, cartella o anno..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); handleFilterChange(); }}
             style={{
@@ -312,10 +526,74 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' })
               fontSize: '13px'
             }}
           />
+          {search && (
+            <button
+              onClick={() => { setSearch(''); handleFilterChange(); }}
+              style={{
+                position: 'absolute',
+                right: '10px',
+                top: '8px',
+                background: 'transparent',
+                border: 'none',
+                color: '#94a3b8',
+                cursor: 'pointer',
+                fontSize: '14px'
+              }}
+            >
+              ✕
+            </button>
+          )}
         </div>
 
         {/* Filter controls */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px' }}>
+        <div className="filter-controls-row" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px' }}>
+          {/* Multi-Selection Mode Toggle */}
+          <button
+            onClick={() => {
+              setIsSelectionMode(!isSelectionMode);
+              if (isSelectionMode) setSelectedIds(new Set());
+            }}
+            style={{
+              padding: '6px 12px',
+              borderRadius: '8px',
+              border: isSelectionMode ? '1px solid #38bdf8' : '1px solid #334155',
+              background: isSelectionMode ? 'rgba(56, 189, 248, 0.2)' : '#0f172a',
+              color: isSelectionMode ? '#38bdf8' : '#94a3b8',
+              fontSize: '12px',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer'
+            }}
+          >
+            <CheckSquare size={14} /> {isSelectionMode ? 'Fine Selezione' : 'Seleziona'}
+          </button>
+
+          {/* Favorites Filter Button */}
+          <button
+            onClick={() => {
+              setOnlyFavorites(!onlyFavorites);
+              handleFilterChange();
+            }}
+            style={{
+              padding: '6px 12px',
+              borderRadius: '8px',
+              border: onlyFavorites ? '1px solid #f43f5e' : '1px solid #334155',
+              background: onlyFavorites ? 'rgba(244, 63, 94, 0.2)' : '#0f172a',
+              color: onlyFavorites ? '#f43f5e' : '#94a3b8',
+              fontSize: '12px',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer'
+            }}
+          >
+            <Heart size={14} fill={onlyFavorites ? '#f43f5e' : 'none'} color={onlyFavorites ? '#f43f5e' : 'currentColor'} />
+            Preferiti
+          </button>
+
           {/* View Mode Toggle (Griglia vs Timeline) */}
           <div style={{ display: 'flex', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', padding: '2px' }}>
             <button
@@ -514,6 +792,132 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' })
         </div>
       </div>
 
+      {/* Floating Batch Action Bar */}
+      {selectedIds.size > 0 && (
+        <div className="floating-batch-bar" style={{
+          position: 'sticky',
+          top: '16px',
+          zIndex: 90,
+          background: '#0f172a',
+          border: '1px solid #0284c7',
+          borderRadius: '12px',
+          padding: '12px 20px',
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '13px', fontWeight: 700, color: '#38bdf8' }}>
+              ✓ {selectedIds.size} {selectedIds.size === 1 ? 'selezionato' : 'selezionati'}
+            </span>
+            <button
+              onClick={handleSelectAll}
+              style={{
+                background: 'transparent',
+                border: '1px solid #334155',
+                color: '#94a3b8',
+                borderRadius: '6px',
+                padding: '4px 8px',
+                fontSize: '11px',
+                cursor: 'pointer'
+              }}
+            >
+              {selectedIds.size === mediaList.length ? 'Deseleziona tutti' : 'Seleziona tutti'}
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
+            {/* Batch Favorite */}
+            <button
+              onClick={() => handleBatchFavorite(true)}
+              style={{
+                background: 'rgba(244, 63, 94, 0.2)',
+                border: '1px solid #f43f5e',
+                color: '#f43f5e',
+                borderRadius: '6px',
+                padding: '6px 12px',
+                fontSize: '12px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer'
+              }}
+            >
+              <Heart size={14} fill="#f43f5e" /> Preferiti
+            </button>
+
+            {/* Batch Add Album */}
+            {albums.length > 0 && (
+              <select
+                onChange={(e) => {
+                  if (e.target.value) handleBatchAddToAlbum(e.target.value);
+                  e.target.value = '';
+                }}
+                defaultValue=""
+                style={{
+                  background: '#1e293b',
+                  color: 'white',
+                  border: '1px solid #334155',
+                  borderRadius: '6px',
+                  padding: '6px 10px',
+                  fontSize: '12px',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="" disabled>+ Aggiungi ad Album</option>
+                {albums.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+            )}
+
+            {/* Batch Add Tag */}
+            {tags.length > 0 && (
+              <select
+                onChange={(e) => {
+                  if (e.target.value) handleBatchAddToTag(e.target.value);
+                  e.target.value = '';
+                }}
+                defaultValue=""
+                style={{
+                  background: '#1e293b',
+                  color: 'white',
+                  border: '1px solid #334155',
+                  borderRadius: '6px',
+                  padding: '6px 10px',
+                  fontSize: '12px',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="" disabled>+ Aggiungi Tag</option>
+                {tags.map((t) => (
+                  <option key={t.id} value={t.id}>#{t.name}</option>
+                ))}
+              </select>
+            )}
+
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              style={{
+                background: '#334155',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '6px 12px',
+                fontSize: '12px',
+                cursor: 'pointer'
+              }}
+            >
+              Annulla
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Timeline Month Chips (shown in Timeline mode or when buckets exist) */}
       {viewMode === 'timeline' && timelineBuckets.length > 0 && (
         <div style={{
@@ -603,7 +1007,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' })
                   — {items.length} {items.length === 1 ? 'elemento' : 'elementi'}
                 </span>
               </div>
-              <div style={{
+              <div className="media-grid-container" style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
                 gap: '16px'
@@ -615,7 +1019,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ initialType = 'all' })
         </div>
       ) : (
         /* Standard Grid View Mode */
-        <div style={{
+        <div className="media-grid-container" style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
           gap: '16px'

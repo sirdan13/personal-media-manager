@@ -9,6 +9,7 @@ from app.services.source_service import (
     get_source_by_id,
     create_source,
     update_source,
+    delete_source,
     get_source_file_fingerprints,
     reconcile_source_files
 )
@@ -54,6 +55,15 @@ def patch_source(
 ):
     source = update_source(db, current_user.id, source_id, source_in)
     return SourceOut.model_validate(source)
+
+@router.delete("/{source_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_source(
+    source_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    delete_source(db, current_user.id, source_id)
+    return None
 
 @router.get("/{source_id}/fingerprints")
 def get_fingerprints(

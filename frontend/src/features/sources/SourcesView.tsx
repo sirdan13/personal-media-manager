@@ -4,7 +4,8 @@ import {
   HardDrive,
   FolderPlus,
   Play,
-  X
+  X,
+  Trash2
 } from 'lucide-react';
 
 interface SourcesViewProps {
@@ -46,6 +47,23 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
       await loadSources();
     } catch (err) {
       console.error('Error toggling status:', err);
+    }
+  };
+
+  const handleDeleteSource = async (sourceId: string, sourceName: string) => {
+    const confirmed = window.confirm(
+      `Sei sicuro di voler eliminare la fonte "${sourceName}" dal catalogo?\n\n` +
+      `ATTENZIONE: I file originali presenti sul tuo disco/cartella NON verranno MAI toccati né cancellati (modalità 100% Read-Only).\n` +
+      `Verranno rimossi soltanto i record dal catalogo e le relative miniature nella cache dell'app.`
+    );
+    if (!confirmed) return;
+
+    try {
+      await ApiClient.deleteSource(sourceId);
+      await loadSources();
+    } catch (err: any) {
+      console.error('Error deleting source:', err);
+      alert(`Errore durante l'eliminazione della fonte: ${err?.message || 'Errore di connessione'}`);
     }
   };
 
@@ -225,6 +243,24 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
                 >
                   <Play size={13} />
                   Scansiona
+                </button>
+
+                <button
+                  onClick={() => handleDeleteSource(s.id, s.name)}
+                  title="Elimina fonte dal catalogo"
+                  style={{
+                    background: 'rgba(239, 68, 68, 0.12)',
+                    color: '#ef4444',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    borderRadius: '8px',
+                    padding: '8px 12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <Trash2 size={14} />
                 </button>
               </div>
             </div>

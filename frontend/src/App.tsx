@@ -11,6 +11,7 @@ import { ScansView } from './features/scans/ScansView';
 import { SettingsView } from './features/settings/SettingsView';
 import { MapView } from './features/map/MapView';
 import { TutorialModal } from './components/TutorialModal';
+import { Grid, Image as ImageIcon, Heart, MapPin, LayoutDashboard } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<any | null>(null);
@@ -18,6 +19,8 @@ export const App: React.FC = () => {
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
   const [sourceToScan, setSourceToScan] = useState<any | null>(null);
+  const [geoFilter, setGeoFilter] = useState<{ latMin: number; latMax: number; lonMin: number; lonMax: number; label?: string } | null>(null);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [initializing, setInitializing] = useState(true);
 
   // Check login on load
@@ -55,6 +58,20 @@ export const App: React.FC = () => {
     setCurrentTab('scans');
   };
 
+  const handleNavigateToLocation = (lat: number, lon: number, radiusKm = 3) => {
+    // 1 deg lat ~= 111km, 1 deg lon ~= 111 * cos(lat)
+    const latDelta = radiusKm / 111.0;
+    const lonDelta = radiusKm / (111.0 * Math.cos((lat * Math.PI) / 180.0));
+    setGeoFilter({
+      latMin: lat - latDelta,
+      latMax: lat + latDelta,
+      lonMin: lon - lonDelta,
+      lonMax: lon + lonDelta,
+      label: `${lat.toFixed(4)}, ${lon.toFixed(4)} (raggio ~${radiusKm}km)`
+    });
+    setCurrentTab('library');
+  };
+
   if (initializing) {
     return (
       <div style={{
@@ -76,9 +93,14 @@ export const App: React.FC = () => {
       {/* Sidebar Navigation */}
       <Sidebar
         currentTab={currentTab}
-        onTabChange={setCurrentTab}
+        onTabChange={(tab) => {
+          setCurrentTab(tab);
+          setIsMobileSidebarOpen(false);
+        }}
         currentUser={currentUser}
         onLogout={handleLogout}
+        isOpenMobile={isMobileSidebarOpen}
+        onCloseMobile={() => setIsMobileSidebarOpen(false)}
       />
 
       {/* Main Content Area */}
@@ -87,9 +109,10 @@ export const App: React.FC = () => {
           currentTab={currentTab}
           onOpenScanner={() => setCurrentTab('scans')}
           onOpenTutorial={() => setIsTutorialOpen(true)}
+          onToggleMobileSidebar={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
         />
 
-        <main style={{ flex: 1, padding: '32px', overflowY: 'auto' }}>
+        <main className="main-content-layout" style={{ flex: 1, padding: '32px', overflowY: 'auto' }}>
           {currentTab === 'dashboard' && (
             <DashboardView
               onNavigate={setCurrentTab}
@@ -99,19 +122,40 @@ export const App: React.FC = () => {
           )}
 
           {currentTab === 'library' && (
-            <LibraryView initialType="all" />
+            <LibraryView
+              initialType="all"
+              initialGeoFilter={geoFilter}
+              onClearGeoFilter={() => setGeoFilter(null)}
+            />
           )}
 
           {currentTab === 'photos' && (
-            <LibraryView initialType="image" />
+            <LibraryView
+              initialType="image"
+              initialGeoFilter={geoFilter}
+              onClearGeoFilter={() => setGeoFilter(null)}
+            />
           )}
 
           {currentTab === 'videos' && (
-            <LibraryView initialType="video" />
+            <LibraryView
+              initialType="video"
+              initialGeoFilter={geoFilter}
+              onClearGeoFilter={() => setGeoFilter(null)}
+            />
+          )}
+
+          {currentTab === 'favorites' && (
+            <LibraryView
+              initialType="all"
+              initialFavorite={true}
+              initialGeoFilter={geoFilter}
+              onClearGeoFilter={() => setGeoFilter(null)}
+            />
           )}
 
           {currentTab === 'map' && (
-            <MapView />
+            <MapView onNavigateToLocation={handleNavigateToLocation} />
           )}
 
           {currentTab === 'duplicates' && (
@@ -136,6 +180,112 @@ export const App: React.FC = () => {
           )}
         </main>
       </div>
+
+      {/* Mobile Bottom Navigation Bar (iOS / Android Native Style) */}
+      <nav className="mobile-bottom-nav" style={{
+        position: 'fixed',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: '60px',
+        background: '#0f172a',
+        borderTop: '1px solid #1e293b',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-around',
+        zIndex: 140,
+        paddingBottom: 'env(safe-area-inset-bottom)'
+      }}>
+        <button
+          onClick={() => setCurrentTab('library')}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '3px',
+            color: currentTab === 'library' ? '#38bdf8' : '#94a3b8',
+            fontSize: '11px',
+            fontWeight: 600
+          }}
+        >
+          <Grid size={18} />
+          Libreria
+        </button>
+
+        <button
+          onClick={() => setCurrentTab('photos')}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '3px',
+            color: currentTab === 'photos' ? '#38bdf8' : '#94a3b8',
+            fontSize: '11px',
+            fontWeight: 600
+          }}
+        >
+          <ImageIcon size={18} />
+          Foto
+        </button>
+
+        <button
+          onClick={() => setCurrentTab('favorites')}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '3px',
+            color: currentTab === 'favorites' ? '#f43f5e' : '#94a3b8',
+            fontSize: '11px',
+            fontWeight: 600
+          }}
+        >
+          <Heart size={18} fill={currentTab === 'favorites' ? '#f43f5e' : 'none'} />
+          Preferiti
+        </button>
+
+        <button
+          onClick={() => setCurrentTab('map')}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '3px',
+            color: currentTab === 'map' ? '#22c55e' : '#94a3b8',
+            fontSize: '11px',
+            fontWeight: 600
+          }}
+        >
+          <MapPin size={18} />
+          Mappa
+        </button>
+
+        <button
+          onClick={() => setCurrentTab('dashboard')}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '3px',
+            color: currentTab === 'dashboard' ? '#38bdf8' : '#94a3b8',
+            fontSize: '11px',
+            fontWeight: 600
+          }}
+        >
+          <LayoutDashboard size={18} />
+          Altro
+        </button>
+      </nav>
 
       {/* Tutorial Guide Modal */}
       <TutorialModal

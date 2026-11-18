@@ -40,6 +40,8 @@ class MediaOut(BaseModel):
     dhash: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    place_name: Optional[str] = None
+    is_favorite: bool = False
     primary_filename: Optional[str] = None
     primary_extension: Optional[str] = None
     primary_size_bytes: Optional[int] = None

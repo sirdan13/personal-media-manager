@@ -46,6 +46,13 @@ def process_scan_batch(
 
             lat = item.metadata_json.get("latitude") if item.metadata_json else None
             lon = item.metadata_json.get("longitude") if item.metadata_json else None
+            place = None
+            if lat is not None and lon is not None:
+                try:
+                    from app.services.geo_service import resolve_and_cache_place
+                    place = resolve_and_cache_place(db, lat, lon)
+                except Exception:
+                    pass
 
             if not media:
                 media_type = "video" if item.mime_type.startswith("video") else "image"
@@ -59,7 +66,8 @@ def process_scan_batch(
                     height=item.height,
                     duration_seconds=item.duration_seconds,
                     latitude=lat,
-                    longitude=lon
+                    longitude=lon,
+                    place_name=place
                 )
                 db.add(media)
                 db.flush() # Flush to get media.id
@@ -76,6 +84,8 @@ def process_scan_batch(
                 if media.latitude is None and lat is not None:
                     media.latitude = lat
                     media.longitude = lon
+                    if not media.place_name and place:
+                        media.place_name = place
 
             # 2. Check if File record already exists for this source and path (Idempotency)
             existing_file = db.query(File).filter(

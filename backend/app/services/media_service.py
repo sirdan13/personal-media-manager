@@ -23,6 +23,11 @@ def list_user_media(
     album_id: Optional[str] = None,
     tag_id: Optional[str] = None,
     month_key: Optional[str] = None,
+    lat_min: Optional[float] = None,
+    lat_max: Optional[float] = None,
+    lon_min: Optional[float] = None,
+    lon_max: Optional[float] = None,
+    is_favorite: Optional[bool] = None,
     sort_by: str = "date_desc",
     offset: int = 0,
     limit: int = 50
@@ -51,11 +56,30 @@ def list_user_media(
         )
         query = query.filter(~Media.id.in_(live_video_subq))
     
+    if is_favorite is not None:
+        query = query.filter(Media.is_favorite == (1 if is_favorite else 0))
+
     if source_id:
         query = query.filter(File.source_id == source_id)
         
     if search:
-        query = query.filter(File.filename.ilike(f"%{search}%"))
+        s = f"%{search.strip()}%"
+        from sqlalchemy import or_
+        # Apple-style multi-attribute search: filename, relative_path, extension, metadata (Make, Model, Lens), tag names, or captured year
+        query = query.outerjoin(MediaTag, Media.id == MediaTag.media_id)\
+                     .outerjoin(Tag, MediaTag.tag_id == Tag.id)\
+                     .filter(
+                         or_(
+                             File.filename.ilike(s),
+                             File.relative_path.ilike(s),
+                             File.extension.ilike(s),
+                             File.metadata_json.ilike(s),
+                             Media.place_name.ilike(s),
+                             Tag.name.ilike(s),
+                             func.strftime('%Y', func.coalesce(Media.captured_at, Media.created_at)).ilike(s),
+                             func.strftime('%Y-%m', func.coalesce(Media.captured_at, Media.created_at)).ilike(s)
+                         )
+                     )
 
     if album_id:
         query = query.join(AlbumMedia, Media.id == AlbumMedia.media_id)\
@@ -69,6 +93,12 @@ def list_user_media(
         query = query.filter(
             func.strftime('%Y-%m', func.coalesce(Media.captured_at, Media.created_at)) == month_key
         )
+
+    # GPS bounding box filter (e.g. from clicking a cluster or location on map)
+    if lat_min is not None and lat_max is not None:
+        query = query.filter(Media.latitude >= lat_min, Media.latitude <= lat_max)
+    if lon_min is not None and lon_max is not None:
+        query = query.filter(Media.longitude >= lon_min, Media.longitude <= lon_max)
 
     query = query.group_by(Media.id)
 
@@ -105,6 +135,8 @@ def list_user_media(
             dhash=getattr(media, "dhash", None),
             latitude=getattr(media, "latitude", None),
             longitude=getattr(media, "longitude", None),
+            place_name=getattr(media, "place_name", None),
+            is_favorite=bool(getattr(media, "is_favorite", 0)),
             primary_filename=p_filename,
             primary_extension=p_extension,
             primary_size_bytes=p_size,
@@ -172,6 +204,8 @@ def get_media_detail(db: Session, user_id: str, media_id: str) -> MediaDetailOut
         dhash=getattr(media, "dhash", None),
         latitude=getattr(media, "latitude", None),
         longitude=getattr(media, "longitude", None),
+        place_name=getattr(media, "place_name", None),
+        is_favorite=bool(getattr(media, "is_favorite", 0)),
         primary_filename=file_outs[0].filename if file_outs else None,
         primary_extension=file_outs[0].extension if file_outs else None,
         primary_size_bytes=file_outs[0].size_bytes if file_outs else None,
@@ -180,6 +214,27 @@ def get_media_detail(db: Session, user_id: str, media_id: str) -> MediaDetailOut
         albums=media_albums,
         tags=media_tags
     )
+
+def toggle_media_favorite(db: Session, user_id: str, media_id: str) -> bool:
+    media = db.query(Media).filter(Media.id == media_id, Media.user_id == user_id).first()
+    if not media:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media non trovato")
+    curr = getattr(media, "is_favorite", 0) or 0
+    new_fav = 0 if curr == 1 else 1
+    media.is_favorite = new_fav
+    db.commit()
+    return bool(new_fav)
+
+
+def batch_set_favorite(db: Session, user_id: str, media_ids: List[str], is_favorite: bool) -> int:
+    fav_val = 1 if is_favorite else 0
+    updated = db.query(Media).filter(
+        Media.user_id == user_id,
+        Media.id.in_(media_ids)
+    ).update({Media.is_favorite: fav_val}, synchronize_session=False)
+    db.commit()
+    return updated
+
 
 def get_timeline_buckets(db: Session, user_id: str) -> List[TimelineBucketOut]:
     month_expr = func.strftime('%Y-%m', func.coalesce(Media.captured_at, Media.created_at)).label("month_key")

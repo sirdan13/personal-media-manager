@@ -55,6 +55,10 @@ def run_db_migrations(target_engine):
                     conn.execute(text("ALTER TABLE media ADD COLUMN latitude FLOAT"))
                 if "longitude" not in cols:
                     conn.execute(text("ALTER TABLE media ADD COLUMN longitude FLOAT"))
+                if "place_name" not in cols:
+                    conn.execute(text("ALTER TABLE media ADD COLUMN place_name VARCHAR(255)"))
+                if "is_favorite" not in cols:
+                    conn.execute(text("ALTER TABLE media ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0"))
                 conn.commit()
         except Exception as e:
             print("Migration warning (media):", e)

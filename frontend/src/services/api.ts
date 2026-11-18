@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:8000/api/v1';
+const API_BASE = '/api/v1';
 
 export class ApiClient {
   private static token: string | null = localStorage.getItem('pmm_token');
@@ -79,6 +79,12 @@ export class ApiClient {
     });
   }
 
+  public static async deleteSource(sourceId: string) {
+    return this.request<void>(`/sources/${sourceId}`, {
+      method: 'DELETE'
+    });
+  }
+
   public static async getSourceFingerprints(sourceId: string) {
     return this.request<Record<string, { id: string; size_bytes: number; filesystem_modified_at: string; sha256: string; availability_status: string }>>(`/sources/${sourceId}/fingerprints`);
   }
@@ -132,6 +138,11 @@ export class ApiClient {
     albumId?: string;
     tagId?: string;
     monthKey?: string;
+    isFavorite?: boolean;
+    latMin?: number;
+    latMax?: number;
+    lonMin?: number;
+    lonMax?: number;
     sortBy?: string;
     offset?: number;
     limit?: number;
@@ -143,6 +154,11 @@ export class ApiClient {
     if (params.albumId) q.set('album_id', params.albumId);
     if (params.tagId) q.set('tag_id', params.tagId);
     if (params.monthKey) q.set('month_key', params.monthKey);
+    if (params.isFavorite !== undefined) q.set('is_favorite', String(params.isFavorite));
+    if (params.latMin !== undefined) q.set('lat_min', String(params.latMin));
+    if (params.latMax !== undefined) q.set('lat_max', String(params.latMax));
+    if (params.lonMin !== undefined) q.set('lon_min', String(params.lonMin));
+    if (params.lonMax !== undefined) q.set('lon_max', String(params.lonMax));
     if (params.sortBy) q.set('sort_by', params.sortBy);
     if (params.offset !== undefined) q.set('offset', String(params.offset));
     if (params.limit !== undefined) q.set('limit', String(params.limit));
@@ -163,6 +179,19 @@ export class ApiClient {
       has_thumbnail: boolean;
       media_type: string;
     }[]>('/media/map');
+  }
+
+  public static async toggleFavorite(mediaId: string) {
+    return this.request<{ id: string; is_favorite: boolean }>(`/media/${mediaId}/favorite`, {
+      method: 'POST'
+    });
+  }
+
+  public static async batchFavorite(mediaIds: string[], isFavorite: boolean) {
+    return this.request<{ updated_count: number; is_favorite: boolean }>('/media/batch/favorite', {
+      method: 'POST',
+      body: JSON.stringify({ media_ids: mediaIds, is_favorite: isFavorite })
+    });
   }
 
   // Albums & Tags

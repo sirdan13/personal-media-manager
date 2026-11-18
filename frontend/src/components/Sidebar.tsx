@@ -9,7 +9,8 @@ import {
   Clock,
   Settings,
   LogOut,
-  MapPin
+  MapPin,
+  Heart
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -17,19 +18,24 @@ interface SidebarProps {
   onTabChange: (tab: string) => void;
   currentUser: any;
   onLogout: () => void;
+  isOpenMobile?: boolean;
+  onCloseMobile?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   currentTab,
   onTabChange,
   currentUser,
-  onLogout
+  onLogout,
+  isOpenMobile = false,
+  onCloseMobile
 }) => {
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'library', label: 'Libreria', icon: Grid },
     { id: 'photos', label: 'Fotografie', icon: Image },
     { id: 'videos', label: 'Video', icon: Video },
+    { id: 'favorites', label: 'Preferiti', icon: Heart, color: '#f43f5e' },
     { id: 'map', label: 'Mappa GPS', icon: MapPin },
     { id: 'duplicates', label: 'Duplicati', icon: Copy, badge: 'Smart' },
     { id: 'sources', label: 'Fonti & Dischi', icon: HardDrive },
@@ -38,19 +44,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   return (
-    <aside style={{
-      width: '260px',
-      background: '#0f172a',
-      borderRight: '1px solid #1e293b',
-      display: 'flex',
-      flexDirection: 'column',
-      justifyContent: 'space-between',
-      padding: '24px 16px',
-      height: '100vh',
-      position: 'sticky',
-      top: 0,
-      flexShrink: 0
-    }}>
+    <>
+      {/* Mobile backdrop */}
+      {isOpenMobile && (
+        <div
+          onClick={onCloseMobile}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.65)',
+            backdropFilter: 'blur(3px)',
+            zIndex: 150
+          }}
+        />
+      )}
+
+      <aside
+        style={{
+          width: '260px',
+          background: '#0f172a',
+          borderRight: '1px solid #1e293b',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          padding: '24px 16px',
+          height: '100vh',
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          zIndex: 160,
+          transform: isOpenMobile ? 'translateX(0)' : undefined,
+          transition: 'transform 0.25s ease-in-out',
+          flexShrink: 0
+        }}
+        className={isOpenMobile ? 'sidebar-open' : 'sidebar-desktop'}
+      >
       <div>
         {/* Logo and Brand */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0 8px 24px', borderBottom: '1px solid #1e293b' }}>
@@ -84,7 +112,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             return (
               <button
                 key={item.id}
-                onClick={() => onTabChange(item.id)}
+                onClick={() => {
+                  onTabChange(item.id);
+                  if (onCloseMobile) onCloseMobile();
+                }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -159,5 +190,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
     </aside>
+    </>
   );
 };

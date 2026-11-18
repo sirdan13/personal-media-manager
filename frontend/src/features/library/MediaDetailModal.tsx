@@ -11,7 +11,8 @@ import {
   Folder,
   Tag as TagIcon,
   Plus,
-  Play
+  Play,
+  Heart
 } from 'lucide-react';
 
 interface MediaDetailModalProps {
@@ -157,7 +158,7 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
   const targetVideoMediaId = data?.media_type === 'video' ? data.id : (data?.is_live_photo && data?.live_video_media_id ? data.live_video_media_id : null);
 
   return (
-    <div style={{
+    <div className="modal-overlay" style={{
       position: 'fixed',
       top: 0,
       left: 0,
@@ -171,7 +172,7 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
       zIndex: 1050,
       padding: '24px'
     }}>
-      <div style={{
+      <div className="modal-card" style={{
         background: '#1e293b',
         border: '1px solid #334155',
         borderRadius: '16px',
@@ -199,18 +200,47 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
               Contenuto logico • {data?.copies_count || 1} copie fisiche collegate
             </span>
           </div>
-          <button
-            onClick={onClose}
-            style={{ background: 'transparent', border: 'none', color: '#94a3b8', padding: '6px' }}
-          >
-            <X size={20} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              onClick={async () => {
+                if (!mediaId) return;
+                try {
+                  const res = await ApiClient.toggleFavorite(mediaId);
+                  setData((prev: any) => ({ ...prev, is_favorite: res.is_favorite }));
+                } catch (err) {
+                  alert((err as Error).message);
+                }
+              }}
+              style={{
+                background: data?.is_favorite ? 'rgba(244, 63, 94, 0.2)' : 'rgba(51, 65, 85, 0.6)',
+                border: data?.is_favorite ? '1px solid #f43f5e' : '1px solid #475569',
+                color: data?.is_favorite ? '#f43f5e' : '#94a3b8',
+                borderRadius: '8px',
+                padding: '6px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              <Heart size={16} fill={data?.is_favorite ? '#f43f5e' : 'none'} color={data?.is_favorite ? '#f43f5e' : 'currentColor'} />
+              {data?.is_favorite ? 'Preferito' : 'Aggiungi ai Preferiti'}
+            </button>
+            <button
+              onClick={onClose}
+              style={{ background: 'transparent', border: 'none', color: '#94a3b8', padding: '6px', cursor: 'pointer' }}
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         {/* Modal Body */}
         <div style={{ display: 'flex', flex: 1, overflowY: 'auto', flexWrap: 'wrap' }}>
           {/* Left Preview Pane */}
-          <div style={{
+          <div className="modal-pane-left" style={{
             flex: '1 1 450px',
             background: '#090d16',
             display: 'flex',
@@ -328,7 +358,7 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
           </div>
 
           {/* Right Information Pane */}
-          <div style={{ flex: '1 1 380px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div className="modal-pane-right" style={{ flex: '1 1 380px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
             {loading && <div style={{ color: '#94a3b8' }}>Caricamento metadati...</div>}
             {error && <div style={{ color: '#f43f5e' }}>{error}</div>}
 

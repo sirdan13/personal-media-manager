@@ -59,3 +59,102 @@ input, select {
 ::-webkit-scrollbar-thumb:hover {
   background: #475569;
 }
+
+/* Mobile & Touch Responsive Styles */
+@media (max-width: 768px) {
+  .sidebar-desktop {
+    transform: translateX(-100%) !important;
+  }
+  .sidebar-open {
+    transform: translateX(0) !important;
+  }
+  /* Prevent horizontal scroll */
+  html, body {
+    overflow-x: hidden;
+    width: 100%;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Responsive main container */
+  .main-content-layout {
+    padding: 12px 10px 80px 10px !important;
+  }
+
+  /* Responsive topbar */
+  .topbar-container {
+    padding: 0 12px !important;
+    height: 56px !important;
+  }
+  .topbar-title {
+    font-size: 15px !important;
+  }
+  .topbar-btn-text {
+    display: none !important;
+  }
+  .topbar-btn {
+    padding: 6px 10px !important;
+  }
+
+  /* Responsive gallery grids (Instagram/Apple Photos style) */
+  .media-grid-container {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+  .media-card-thumb {
+    height: 140px !important;
+  }
+
+  /* Filter bar wrapping */
+  .filter-bar-container {
+    padding: 10px !important;
+    gap: 8px !important;
+  }
+  .filter-search-box {
+    flex: 1 1 100% !important;
+    width: 100% !important;
+  }
+  .filter-controls-row {
+    width: 100% !important;
+    overflow-x: auto !important;
+    padding-bottom: 4px !important;
+    flex-wrap: nowrap !important;
+  }
+
+  /* Floating batch action bar */
+  .floating-batch-bar {
+    padding: 8px 12px !important;
+    top: 8px !important;
+  }
+
+  /* Modal responsive fullscreen */
+  .modal-overlay {
+    padding: 0 !important;
+  }
+  .modal-card {
+    border-radius: 0 !important;
+    max-height: 100vh !important;
+    height: 100vh !important;
+    max-width: 100vw !important;
+  }
+  .modal-pane-left {
+    min-height: 240px !important;
+    padding: 10px !important;
+  }
+  .modal-pane-right {
+    padding: 14px !important;
+  }
+}
+
+@media (min-width: 769px) {
+  .sidebar-desktop {
+    position: sticky !important;
+    transform: none !important;
+  }
+  .mobile-bottom-nav {
+    display: none !important;
+  }
+  .mobile-sidebar-backdrop {
+    display: none !important;
+  }
+}
