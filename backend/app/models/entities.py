@@ -57,6 +57,7 @@ class Source(Base):
     device_id = Column(String(36), ForeignKey("devices.id", ondelete="SET NULL"), nullable=True)
     name = Column(String(200), nullable=False)
     source_type = Column(String(50), nullable=False, default="browser_folder")
+    role = Column(String(30), nullable=False, default="primary")
     root_path = Column(Text, nullable=True)
     persistent_identifier = Column(String(255), nullable=True)
     status = Column(String(30), nullable=False, default="online")

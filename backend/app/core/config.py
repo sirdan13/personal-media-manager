@@ -2,9 +2,9 @@ import os
 from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_DEFAULT_DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data"))
-_DEFAULT_DB_PATH = os.path.join(_DEFAULT_DATA_DIR, "personal_media_manager.db")
-_DEFAULT_THUMBS_DIR = os.path.join(_DEFAULT_DATA_DIR, "thumbnails")
+_DEFAULT_DATA_DIR = os.environ.get("STORAGE_DIR") or os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data"))
+_DEFAULT_DB_PATH = os.environ.get("DATABASE_PATH") or os.path.join(_DEFAULT_DATA_DIR, "personal_media_manager.db")
+_DEFAULT_THUMBS_DIR = os.environ.get("THUMBNAILS_DIR") or os.path.join(_DEFAULT_DATA_DIR, "thumbnails")
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Personal Media Manager API"
@@ -12,12 +12,12 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     
     # Security
-    SECRET_KEY: str = "dev-secret-key-change-in-production-1234567890"
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 # 24 hours
+    SECRET_KEY: str = os.environ.get("JWT_SECRET_KEY") or os.environ.get("SECRET_KEY") or "dev-secret-key-change-in-production-1234567890"
+    ALGORITHM: str = os.environ.get("JWT_ALGORITHM") or "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.environ.get("JWT_ACCESS_TOKEN_EXPIRE_MINUTES") or 60 * 24) # 24 hours
     
     # Database
-    DATABASE_URL: str = f"sqlite:///{_DEFAULT_DB_PATH}"
+    DATABASE_URL: str = os.environ.get("DATABASE_URL") or f"sqlite:///{_DEFAULT_DB_PATH}"
     
     # Storage
     STORAGE_DIR: str = _DEFAULT_DATA_DIR

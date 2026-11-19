@@ -2,6 +2,7 @@ import os
 import io
 import base64
 import json
+from typing import Optional
 from datetime import datetime, timezone
 from PIL import Image, ImageOps
 from sqlalchemy.orm import Session
@@ -32,6 +33,26 @@ def process_scan_batch(
 
     IGNORED_EXTENSIONS = {"aae", "xmp", "lrv", "thm", "dat", "ds_store", "db", "ini"}
 
+    # Pre-resolve GPS places in batch
+    coords = []
+    for item in batch_data.items:
+        if item.metadata_json:
+            lat = item.metadata_json.get("latitude")
+            lon = item.metadata_json.get("longitude")
+            if lat is not None and lon is not None:
+                try:
+                    coords.append((float(lat), float(lon)))
+                except (ValueError, TypeError):
+                    pass
+
+    places_map = {}
+    if coords:
+        try:
+            from app.services.geo_service import resolve_and_cache_places_batch, coord_to_key
+            places_map = resolve_and_cache_places_batch(db, coords)
+        except Exception as e:
+            print(f"Batch geocoding warning: {e}")
+
     for item in batch_data.items:
         try:
             # Ignore sidecar and non-media system files
@@ -49,8 +70,8 @@ def process_scan_batch(
             place = None
             if lat is not None and lon is not None:
                 try:
-                    from app.services.geo_service import resolve_and_cache_place
-                    place = resolve_and_cache_place(db, lat, lon)
+                    from app.services.geo_service import coord_to_key
+                    place = places_map.get(coord_to_key(float(lat), float(lon)))
                 except Exception:
                     pass
 
@@ -156,13 +177,24 @@ def process_scan_batch(
             failed_count += 1
             print(f"Error processing item {item.relative_path}: {e}")
 
-    job.processed_files = (job.processed_files or 0) + processed_count
-    job.failed_files = (job.failed_files or 0) + failed_count
-    db.commit()
+    try:
+        job.processed_files = (job.processed_files or 0) + processed_count
+        job.failed_files = (job.failed_files or 0) + failed_count
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"Error committing batch for scan {scan_id}: {e}")
+        return ScanBatchResponse(
+            processed=0,
+            new_media_created=0,
+            duplicate_instances_associated=0,
+            failed=len(batch_data.items)
+        )
 
     # Link any newly discovered Live Photo pairs
     try:
-        link_live_photos_for_user(db, user_id)
+        touched_dirs = {os.path.dirname(item.relative_path or "") for item in batch_data.items}
+        link_live_photos_for_user(db, user_id, source_id=source_id, directories=touched_dirs)
     except Exception as e:
         print(f"Live photo linking warning: {e}")
 
@@ -173,14 +205,27 @@ def process_scan_batch(
         failed=failed_count
     )
 
-def link_live_photos_for_user(db: Session, user_id: str) -> int:
+def link_live_photos_for_user(
+    db: Session,
+    user_id: str,
+    source_id: Optional[str] = None,
+    directories: Optional[set] = None
+) -> int:
     """Finds matching photo + .mov pairs in the same directory and links them as Live Photos."""
-    files = (
+    query = (
         db.query(File, Media)
         .join(Media, File.media_id == Media.id)
         .filter(Media.user_id == user_id)
-        .all()
     )
+    if source_id:
+        query = query.filter(File.source_id == source_id)
+    files = query.all()
+
+    if directories is not None:
+        files = [
+            (f, m) for f, m in files
+            if os.path.dirname(f.relative_path or "") in directories
+        ]
 
     photos_by_key = {}
     videos_by_key = {}
@@ -211,10 +256,15 @@ def link_live_photos_for_user(db: Session, user_id: str) -> int:
     return linked_count
 
 def save_thumbnail(db: Session, media_id: str, sha256: str, thumbnail_base64: str, profile: str = "balanced"):
-    # Check if thumbnail already saved
+    # Check if thumbnail already saved in DB
     existing_thumb = db.query(Thumbnail).filter(Thumbnail.media_id == media_id).first()
     if existing_thumb:
         return
+
+    # Check if thumbnail already added to current session (pending in db.new)
+    for obj in db.new:
+        if isinstance(obj, Thumbnail) and getattr(obj, "media_id", None) == media_id:
+            return
 
     try:
         # Strip data URL prefix if present (e.g. data:image/...;base64,...)

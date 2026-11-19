@@ -21,6 +21,8 @@ def isolate_thumbnails_dir(tmp_path, monkeypatch):
 def db_engine():
     engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
     Base.metadata.create_all(bind=engine)
+    from app.services.geo_service import init_geo_places_cache
+    init_geo_places_cache(engine)
     yield engine
     Base.metadata.drop_all(bind=engine)
 

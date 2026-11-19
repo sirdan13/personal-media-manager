@@ -6,6 +6,10 @@ class AlbumCreate(BaseModel):
     name: str
     description: Optional[str] = None
 
+class AlbumUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
 class AlbumOut(BaseModel):
     id: str
     user_id: str
@@ -13,6 +17,7 @@ class AlbumOut(BaseModel):
     description: Optional[str] = None
     created_at: datetime
     media_count: int = 0
+    cover_media_id: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -11,8 +11,23 @@ import {
   CheckCircle,
   AlertTriangle,
   FolderPlus,
-  Sparkles
+  Sparkles,
+  Camera,
+  MapPin,
+  Heart,
+  Film,
+  Layers,
+  ChevronRight,
+  ShieldCheck
 } from 'lucide-react';
+
+interface StorageSourceItem {
+  source_id: string;
+  source_name: string;
+  status: string;
+  file_count: number;
+  total_bytes: number;
+}
 
 interface DashboardStats {
   total_photos: number;
@@ -21,6 +36,18 @@ interface DashboardStats {
   total_physical_copies: number;
   duplicate_copies: number;
   total_bytes_indexed: number;
+  missing_thumbnails_count?: number;
+  geotagged_count?: number;
+  favorites_count?: number;
+  raw_count?: number;
+  live_photos_count?: number;
+  recoverable_duplicate_bytes?: number;
+  protection_coverage_pct?: number;
+  protected_media_count?: number;
+  unprotected_media_count?: number;
+  intra_source_wasted_bytes?: number;
+  multi_source_backup_bytes?: number;
+  storage_by_source?: StorageSourceItem[];
 }
 
 interface DashboardViewProps {
@@ -130,6 +157,54 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
         </div>
       </div>
 
+      {/* Missing Thumbnails Warning Banner */}
+      {stats && (stats.missing_thumbnails_count ?? 0) > 0 && (
+        <div style={{
+          background: 'rgba(245, 158, 11, 0.1)',
+          border: '1px solid rgba(245, 158, 11, 0.35)',
+          borderRadius: '12px',
+          padding: '16px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ padding: '8px', background: 'rgba(245, 158, 11, 0.2)', borderRadius: '8px' }}>
+              <AlertTriangle size={20} color="#f59e0b" />
+            </div>
+            <div>
+              <div style={{ fontWeight: 600, color: '#f59e0b', fontSize: '14px' }}>
+                Miniature mancanti rilevate ({stats.missing_thumbnails_count} elementi)
+              </div>
+              <div style={{ color: '#94a3b8', fontSize: '12px', marginTop: '2px' }}>
+                Alcuni file RAW, HEIC o video non hanno ancora una miniatura WebP ottimizzata. Puoi rigenerarle con la scansione rapida lato server.
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => onNavigate('scans')}
+            style={{
+              background: '#f59e0b',
+              color: '#0f172a',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '8px 14px',
+              fontSize: '12px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            Rigenera in Scansioni
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      )}
+
       {/* KPI Cards Grid */}
       <div style={{
         display: 'grid',
@@ -204,6 +279,30 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
         </div>
 
         <div
+          onClick={() => onNavigate('duplicates')}
+          style={{
+            background: '#1e293b',
+            border: '1px solid #334155',
+            borderRadius: '12px',
+            padding: '20px',
+            cursor: 'pointer'
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 500 }}>Salute Backup Multi-Disco</span>
+            <div style={{ padding: '8px', background: 'rgba(34, 197, 94, 0.1)', borderRadius: '8px' }}>
+              <ShieldCheck size={20} color="#22c55e" />
+            </div>
+          </div>
+          <div style={{ fontSize: '28px', fontWeight: 'bold', marginTop: '12px', color: '#22c55e' }}>
+            {loading ? '...' : `${stats?.protection_coverage_pct ?? 0}%`}
+          </div>
+          <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>
+            {stats?.protected_media_count ?? 0} protetti su 2+ dischi
+          </div>
+        </div>
+
+        <div
           onClick={() => onNavigate('sources')}
           style={{
             background: '#1e293b',
@@ -247,6 +346,195 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
           </div>
         </div>
       </div>
+
+      {/* Quick Filters / Feature Badges */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+        gap: '12px'
+      }}>
+        <div
+          onClick={() => onNavigate('photos')}
+          style={{
+            background: '#0f172a',
+            border: '1px solid #334155',
+            borderRadius: '10px',
+            padding: '12px 16px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            transition: 'border-color 0.15s ease'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Camera size={18} color="#ec4899" />
+            <div>
+              <div style={{ fontSize: '11px', color: '#94a3b8' }}>Foto RAW</div>
+              <div style={{ fontSize: '15px', fontWeight: 700 }}>{stats?.raw_count ?? 0}</div>
+            </div>
+          </div>
+          <ChevronRight size={14} color="#64748b" />
+        </div>
+
+        <div
+          onClick={() => onNavigate('photos')}
+          style={{
+            background: '#0f172a',
+            border: '1px solid #334155',
+            borderRadius: '10px',
+            padding: '12px 16px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Film size={18} color="#06b6d4" />
+            <div>
+              <div style={{ fontSize: '11px', color: '#94a3b8' }}>Live Photos</div>
+              <div style={{ fontSize: '15px', fontWeight: 700 }}>{stats?.live_photos_count ?? 0}</div>
+            </div>
+          </div>
+          <ChevronRight size={14} color="#64748b" />
+        </div>
+
+        <div
+          onClick={() => onNavigate('map')}
+          style={{
+            background: '#0f172a',
+            border: '1px solid #334155',
+            borderRadius: '10px',
+            padding: '12px 16px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <MapPin size={18} color="#10b981" />
+            <div>
+              <div style={{ fontSize: '11px', color: '#94a3b8' }}>Con GPS</div>
+              <div style={{ fontSize: '15px', fontWeight: 700 }}>{stats?.geotagged_count ?? 0}</div>
+            </div>
+          </div>
+          <ChevronRight size={14} color="#64748b" />
+        </div>
+
+        <div
+          onClick={() => onNavigate('photos')}
+          style={{
+            background: '#0f172a',
+            border: '1px solid #334155',
+            borderRadius: '10px',
+            padding: '12px 16px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Heart size={18} color="#f43f5e" />
+            <div>
+              <div style={{ fontSize: '11px', color: '#94a3b8' }}>Preferiti</div>
+              <div style={{ fontSize: '15px', fontWeight: 700 }}>{stats?.favorites_count ?? 0}</div>
+            </div>
+          </div>
+          <ChevronRight size={14} color="#64748b" />
+        </div>
+
+        <div
+          onClick={() => onNavigate('duplicates')}
+          style={{
+            background: '#0f172a',
+            border: '1px solid #334155',
+            borderRadius: '10px',
+            padding: '12px 16px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Layers size={18} color="#f59e0b" />
+            <div>
+              <div style={{ fontSize: '11px', color: '#94a3b8' }}>Recuperabili</div>
+              <div style={{ fontSize: '15px', fontWeight: 700 }}>{formatBytes(stats?.recoverable_duplicate_bytes ?? 0)}</div>
+            </div>
+          </div>
+          <ChevronRight size={14} color="#64748b" />
+        </div>
+      </div>
+
+      {/* Storage Breakdown by Source */}
+      {stats?.storage_by_source && stats.storage_by_source.length > 0 && (
+        <div style={{
+          background: '#1e293b',
+          border: '1px solid #334155',
+          borderRadius: '14px',
+          padding: '22px'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ fontSize: '16px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+              <HardDrive size={18} color="#38bdf8" />
+              Distribuzione Spazio per Disco & Fonte
+            </h3>
+            <span style={{ fontSize: '12px', color: '#94a3b8' }}>
+              Totale indicizzato: {formatBytes(stats.total_bytes_indexed)}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {stats.storage_by_source.map((src) => {
+              const pct = stats.total_bytes_indexed > 0
+                ? Math.min(100, Math.round((src.total_bytes / stats.total_bytes_indexed) * 100))
+                : 0;
+
+              return (
+                <div key={src.source_id} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontWeight: 600 }}>{src.source_name}</span>
+                      <span style={{
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        background: src.status === 'online' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(148, 163, 184, 0.15)',
+                        color: src.status === 'online' ? '#22c55e' : '#94a3b8'
+                      }}>
+                        {src.status.toUpperCase()}
+                      </span>
+                    </div>
+                    <div style={{ color: '#94a3b8', fontSize: '12px' }}>
+                      <strong>{formatBytes(src.total_bytes)}</strong> ({pct}%) • {src.file_count.toLocaleString()} file
+                    </div>
+                  </div>
+                  <div style={{
+                    width: '100%',
+                    height: '8px',
+                    background: '#0f172a',
+                    borderRadius: '4px',
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{
+                      width: `${pct}%`,
+                      height: '100%',
+                      background: src.status === 'online' ? 'linear-gradient(90deg, #0284c7, #38bdf8)' : '#64748b',
+                      borderRadius: '4px',
+                      transition: 'width 0.3s ease'
+                    }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Two Column Layout: Sources Status & Recent Scans */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '20px' }}>

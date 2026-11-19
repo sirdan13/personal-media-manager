@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ApiClient } from '../../services/api';
+import { useToast } from '../../context/ToastContext';
 import {
   HardDrive,
   FolderPlus,
@@ -13,7 +14,8 @@ import {
   Info,
   Check,
   Laptop,
-  HelpCircle
+  HelpCircle,
+  Server
 } from 'lucide-react';
 
 interface SourcesViewProps {
@@ -21,12 +23,14 @@ interface SourcesViewProps {
 }
 
 export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }) => {
+  const { toast } = useToast();
   const [sources, setSources] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [name, setName] = useState('');
   const [sourceType, setSourceType] = useState('browser_folder');
   const [rootPath, setRootPath] = useState('');
+  const [role, setRole] = useState<'primary' | 'backup' | 'archive'>('primary');
   const [saving, setSaving] = useState(false);
 
   // Filesystem explorer & guide state
@@ -60,6 +64,7 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
     setIsModalOpen(true);
     setName('');
     setRootPath('');
+    setRole('primary');
     setSourceType('browser_folder');
     setShowExplorer(false);
     setShowGuide(false);
@@ -90,7 +95,7 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
         // User cancelled picker
       }
     } else {
-      alert('Il tuo browser attuale non supporta la selezione diretta tramite cartella di sistema. Usa il pulsante Sfoglia Dischi del Mac o inserisci il percorso.');
+      toast.info('Il tuo browser attuale non supporta la selezione diretta tramite cartella. Usa il pulsante Sfoglia Dischi del Mac o inserisci il percorso.');
     }
   };
 
@@ -133,10 +138,11 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
 
     try {
       await ApiClient.deleteSource(sourceId);
+      toast.success(`Fonte "${sourceName}" eliminata.`);
       await loadSources();
     } catch (err: any) {
       console.error('Error deleting source:', err);
-      alert(`Errore durante l'eliminazione della fonte: ${err?.message || 'Errore di connessione'}`);
+      toast.error(`Errore durante l'eliminazione della fonte: ${err?.message || 'Errore di connessione'}`);
     }
   };
 
@@ -145,10 +151,11 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
     if (!name.trim()) return;
     setSaving(true);
     try {
-      await ApiClient.createSource(name.trim(), sourceType, rootPath.trim() || undefined);
+      await ApiClient.createSource(name.trim(), sourceType, rootPath.trim() || undefined, role);
       setIsModalOpen(false);
       setName('');
       setRootPath('');
+      setRole('primary');
       await loadSources();
     } catch (err) {
       console.error('Error creating source:', err);
@@ -240,7 +247,21 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
                       <HardDrive size={22} color="#38bdf8" />
                     </div>
                     <div>
-                      <h4 style={{ fontSize: '16px', fontWeight: 600 }}>{s.name}</h4>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <h4 style={{ fontSize: '16px', fontWeight: 600 }}>{s.name}</h4>
+                        <span style={{
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          background: s.role === 'backup' ? 'rgba(34, 197, 94, 0.15)' : s.role === 'archive' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+                          color: s.role === 'backup' ? '#22c55e' : s.role === 'archive' ? '#c084fc' : '#38bdf8',
+                          border: `1px solid ${s.role === 'backup' ? 'rgba(34, 197, 94, 0.3)' : s.role === 'archive' ? 'rgba(168, 85, 247, 0.3)' : 'rgba(56, 189, 248, 0.3)'}`,
+                          letterSpacing: '0.5px'
+                        }}>
+                          {s.role === 'backup' ? '🛡️ BACKUP' : s.role === 'archive' ? '📦 ARCHIVE' : '💻 PRIMARY'}
+                        </span>
+                      </div>
                       <span style={{ fontSize: '11px', color: '#94a3b8' }}>
                         {s.source_type.replace('_', ' ').toUpperCase()}
                       </span>
@@ -296,6 +317,30 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
                 >
                   {s.status === 'online' ? 'Scollega' : 'Ricollega'}
                 </button>
+
+                {s.root_path && s.status !== 'offline' && (
+                  <button
+                    onClick={() => onStartScanForSource(s)}
+                    title="Scansione nativa sul server (RAW, HEIC, Video)"
+                    style={{
+                      flex: 1,
+                      background: 'rgba(34, 197, 94, 0.15)',
+                      color: '#22c55e',
+                      border: '1px solid rgba(34, 197, 94, 0.4)',
+                      borderRadius: '8px',
+                      padding: '8px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '5px'
+                    }}
+                  >
+                    <Server size={13} />
+                    Server
+                  </button>
+                )}
 
                 <button
                   onClick={() => onStartScanForSource(s)}
@@ -423,6 +468,32 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
                   <option value="network_share">Condivisione di Rete / NAS</option>
                   <option value="internal_drive">Disco Interno</option>
                 </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>
+                  Ruolo di Ridondanza / Strategia Backup *
+                </label>
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value as any)}
+                  style={{
+                    width: '100%',
+                    background: '#0f172a',
+                    border: '1px solid #334155',
+                    borderRadius: '8px',
+                    padding: '10px 12px',
+                    color: 'white',
+                    fontSize: '13px'
+                  }}
+                >
+                  <option value="primary">Disco Principale / Lavoro (primary)</option>
+                  <option value="backup">Disco di Backup / Replica (backup)</option>
+                  <option value="archive">Archivio Storico (archive)</option>
+                </select>
+                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+                  I file presenti su un disco Principale e su un disco Backup sono considerati repliche protette di sicurezza.
+                </div>
               </div>
 
               {/* Box 3: Percorso o Montaggio con Explorer e Guida */}

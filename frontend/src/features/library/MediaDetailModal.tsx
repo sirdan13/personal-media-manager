@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ApiClient } from '../../services/api';
+import { useToast } from '../../context/ToastContext';
 import {
   X,
   Calendar,
@@ -12,18 +13,40 @@ import {
   Tag as TagIcon,
   Plus,
   Play,
-  Heart
+  Heart,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Sparkles
 } from 'lucide-react';
 
 interface MediaDetailModalProps {
   mediaId: string | null;
   onClose: () => void;
+  onPrev?: () => void;
+  onNext?: () => void;
+  hasPrev?: boolean;
+  hasNext?: boolean;
+  onFavoriteChanged?: (mediaId: string, isFavorite: boolean) => void;
 }
 
-export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onClose }) => {
+export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
+  mediaId,
+  onClose,
+  onPrev,
+  onNext,
+  hasPrev = false,
+  hasNext = false,
+  onFavoriteChanged
+}) => {
+  const { toast } = useToast();
   const [data, setData] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // High Resolution Preview state
+  const [loadHd, setLoadHd] = useState(false);
+  const [hdError, setHdError] = useState<string | null>(null);
 
   // Albums & Tags state
   const [availableAlbums, setAvailableAlbums] = useState<any[]>([]);
@@ -36,9 +59,12 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
   const [isPlayingVideo, setIsPlayingVideo] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
 
+  // Reset state on mediaId change
   useEffect(() => {
     setIsPlayingVideo(false);
     setStreamError(null);
+    setLoadHd(false);
+    setHdError(null);
     if (!mediaId) {
       setData(null);
       return;
@@ -66,6 +92,44 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
     loadDetail();
   }, [mediaId]);
 
+  // Keyboard Navigation: Escape, ArrowLeft, ArrowRight, F
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName)) {
+        return;
+      }
+      if (e.key === 'Escape') {
+        onClose();
+      } else if (e.key === 'ArrowLeft') {
+        if (hasPrev && onPrev) onPrev();
+      } else if (e.key === 'ArrowRight') {
+        if (hasNext && onNext) onNext();
+      } else if (e.key === 'f' || e.key === 'F') {
+        if (data && mediaId) {
+          handleToggleFavoriteModal();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [mediaId, data, hasPrev, hasNext, onPrev, onNext, onClose]);
+
+  const handleToggleFavoriteModal = async () => {
+    if (!mediaId) return;
+    try {
+      const res = await ApiClient.toggleFavorite(mediaId);
+      setData((prev: any) => prev ? { ...prev, is_favorite: res.is_favorite } : prev);
+      if (onFavoriteChanged) {
+        onFavoriteChanged(mediaId, res.is_favorite);
+      }
+      toast.success(res.is_favorite ? 'Aggiunto ai preferiti ❤️' : 'Rimosso dai preferiti');
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
+  };
+
   if (!mediaId) return null;
 
   const handleAddMediaToAlbum = async (albumId: string) => {
@@ -74,8 +138,9 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
       await ApiClient.addMediaToAlbum(albumId, [mediaId]);
       const updated = await ApiClient.getMediaDetail(mediaId);
       setData(updated);
+      toast.success('Aggiunto all\'album!');
     } catch (err) {
-      alert((err as Error).message);
+      toast.error((err as Error).message);
     }
   };
 
@@ -89,8 +154,9 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
       setData(updated);
       setNewAlbumName('');
       setShowNewAlbumInput(false);
+      toast.success(`Album "${created.name}" creato!`);
     } catch (err) {
-      alert((err as Error).message);
+      toast.error((err as Error).message);
     }
   };
 
@@ -102,8 +168,9 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
         ...prev,
         albums: prev?.albums?.filter((a: any) => a.id !== albumId) || []
       }));
+      toast.success('Rimosso dall\'album.');
     } catch (err) {
-      alert((err as Error).message);
+      toast.error((err as Error).message);
     }
   };
 
@@ -113,8 +180,9 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
       await ApiClient.addMediaToTag(tagId, [mediaId]);
       const updated = await ApiClient.getMediaDetail(mediaId);
       setData(updated);
+      toast.success('Tag associato!');
     } catch (err) {
-      alert((err as Error).message);
+      toast.error((err as Error).message);
     }
   };
 
@@ -128,8 +196,9 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
       setData(updated);
       setNewTagName('');
       setShowNewTagInput(false);
+      toast.success(`Tag "${created.name}" creato!`);
     } catch (err) {
-      alert((err as Error).message);
+      toast.error((err as Error).message);
     }
   };
 
@@ -141,8 +210,9 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
         ...prev,
         tags: prev?.tags?.filter((t: any) => t.id !== tagId) || []
       }));
+      toast.success('Tag rimosso.');
     } catch (err) {
-      alert((err as Error).message);
+      toast.error((err as Error).message);
     }
   };
 
@@ -196,9 +266,50 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
             <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>
               {primaryFile?.filename || 'Dettaglio Media'}
             </h3>
-            <span style={{ fontSize: '12px', color: '#94a3b8' }}>
-              Contenuto logico • {data?.copies_count || 1} copie fisiche collegate
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '12px', color: '#94a3b8' }}>
+                Contenuto logico • {data?.copies_count || 1} copie fisiche ({data?.distinct_sources_count || 1} {(data?.distinct_sources_count || 1) === 1 ? 'disco' : 'dischi'})
+              </span>
+              {data?.protection_status === 'protected' && (
+                <span style={{
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  padding: '2px 8px',
+                  borderRadius: '6px',
+                  background: 'rgba(34, 197, 94, 0.15)',
+                  color: '#22c55e',
+                  border: '1px solid rgba(34, 197, 94, 0.3)'
+                }}>
+                  🛡️ Protetto su {data.distinct_sources_count} dischi
+                </span>
+              )}
+              {data?.protection_status === 'intra_source_duplicate' && (
+                <span style={{
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  padding: '2px 8px',
+                  borderRadius: '6px',
+                  background: 'rgba(245, 158, 11, 0.15)',
+                  color: '#f59e0b',
+                  border: '1px solid rgba(245, 158, 11, 0.3)'
+                }}>
+                  ⚠️ Doppioni sullo stesso disco
+                </span>
+              )}
+              {data?.protection_status === 'unprotected' && (
+                <span style={{
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  padding: '2px 8px',
+                  borderRadius: '6px',
+                  background: 'rgba(244, 63, 94, 0.15)',
+                  color: '#f43f5e',
+                  border: '1px solid rgba(244, 63, 94, 0.3)'
+                }}>
+                  🔴 A Rischio (1 Solo Disco)
+                </span>
+              )}
+            </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <button
@@ -207,8 +318,12 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
                 try {
                   const res = await ApiClient.toggleFavorite(mediaId);
                   setData((prev: any) => ({ ...prev, is_favorite: res.is_favorite }));
+                  if (onFavoriteChanged) {
+                    onFavoriteChanged(mediaId, res.is_favorite);
+                  }
+                  toast.success(res.is_favorite ? 'Aggiunto ai preferiti ❤️' : 'Rimosso dai preferiti');
                 } catch (err) {
-                  alert((err as Error).message);
+                  toast.error((err as Error).message);
                 }
               }}
               style={{
@@ -250,6 +365,62 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
             padding: '20px',
             position: 'relative'
           }}>
+            {/* Prev Button */}
+            {hasPrev && onPrev && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onPrev(); }}
+                style={{
+                  position: 'absolute',
+                  left: '12px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'rgba(15, 23, 42, 0.75)',
+                  border: '1px solid #334155',
+                  color: 'white',
+                  borderRadius: '50%',
+                  width: '36px',
+                  height: '36px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  zIndex: 10,
+                  backdropFilter: 'blur(4px)'
+                }}
+                title="Foto Precedente (←)"
+              >
+                <ChevronLeft size={20} />
+              </button>
+            )}
+
+            {/* Next Button */}
+            {hasNext && onNext && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onNext(); }}
+                style={{
+                  position: 'absolute',
+                  right: '12px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'rgba(15, 23, 42, 0.75)',
+                  border: '1px solid #334155',
+                  color: 'white',
+                  borderRadius: '50%',
+                  width: '36px',
+                  height: '36px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  zIndex: 10,
+                  backdropFilter: 'blur(4px)'
+                }}
+                title="Foto Successiva (→)"
+              >
+                <ChevronRight size={20} />
+              </button>
+            )}
+
             {isPlayingVideo && targetVideoMediaId ? (
               <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                 <video
@@ -291,8 +462,14 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
             ) : data?.has_thumbnail ? (
               <>
                 <img
-                  src={ApiClient.getThumbnailUrl(data.id)}
+                  src={loadHd ? ApiClient.getMediaPreviewUrl(data.id) : ApiClient.getThumbnailUrl(data.id)}
                   alt={primaryFile?.filename || 'Media'}
+                  onError={() => {
+                    if (loadHd) {
+                      setHdError('Disco offline o anteprima HD non disponibile.');
+                      setLoadHd(false);
+                    }
+                  }}
                   style={{
                     maxHeight: '440px',
                     maxWidth: '100%',
@@ -301,57 +478,154 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
                     boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
                   }}
                 />
-                {targetVideoMediaId && (
-                  <button
-                    onClick={() => { setStreamError(null); setIsPlayingVideo(true); }}
+
+                {hdError && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '16px',
+                    background: 'rgba(244, 63, 94, 0.85)',
+                    color: 'white',
+                    padding: '4px 10px',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    fontWeight: 600
+                  }}>
+                    {hdError}
+                  </div>
+                )}
+
+                <div style={{
+                  position: 'absolute',
+                  bottom: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  flexWrap: 'wrap',
+                  justifyContent: 'center',
+                  zIndex: 5
+                }}>
+                  {data.media_type === 'image' && (
+                    <button
+                      onClick={() => { setHdError(null); setLoadHd(!loadHd); }}
+                      style={{
+                        background: loadHd ? 'rgba(34, 197, 94, 0.9)' : 'rgba(15, 23, 42, 0.85)',
+                        border: '1px solid #334155',
+                        color: 'white',
+                        borderRadius: '20px',
+                        padding: '6px 14px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        backdropFilter: 'blur(4px)'
+                      }}
+                    >
+                      <Sparkles size={13} color={loadHd ? 'white' : '#38bdf8'} />
+                      {loadHd ? 'HD Attivo (1920px)' : 'Carica HD'}
+                    </button>
+                  )}
+                  <a
+                    href={ApiClient.getMediaDownloadUrl(data.id)}
+                    target="_blank"
+                    rel="noreferrer"
                     style={{
-                      position: 'absolute',
-                      bottom: '20px',
-                      background: 'rgba(2, 132, 199, 0.95)',
+                      background: 'rgba(15, 23, 42, 0.85)',
+                      border: '1px solid #334155',
                       color: 'white',
-                      border: 'none',
                       borderRadius: '20px',
-                      padding: '8px 16px',
-                      fontSize: '12px',
+                      padding: '6px 14px',
+                      fontSize: '11px',
                       fontWeight: 600,
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '6px',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+                      textDecoration: 'none',
                       backdropFilter: 'blur(4px)'
                     }}
                   >
-                    <Play size={14} fill="white" />
-                    {data.is_live_photo ? 'Riproduci Live Photo (se disco online)' : 'Riproduci Video (se disco online)'}
-                  </button>
-                )}
+                    <Download size={13} color="#38bdf8" />
+                    Scarica
+                  </a>
+                  {targetVideoMediaId && (
+                    <button
+                      onClick={() => { setStreamError(null); setIsPlayingVideo(true); }}
+                      style={{
+                        background: 'rgba(2, 132, 199, 0.95)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '20px',
+                        padding: '6px 14px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        backdropFilter: 'blur(4px)'
+                      }}
+                    >
+                      <Play size={13} fill="white" />
+                      {data.is_live_photo ? 'Live Photo' : 'Riproduci Video'}
+                    </button>
+                  )}
+                </div>
               </>
+            ) : loading && !data ? (
+              <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>
+                Caricamento anteprima...
+              </div>
             ) : (
               <div style={{ textAlign: 'center', color: '#64748b' }}>
                 <FileText size={56} style={{ margin: '0 auto 12px' }} />
                 <div>Miniatura non generata sul server</div>
-                {targetVideoMediaId && (
-                  <button
-                    onClick={() => { setStreamError(null); setIsPlayingVideo(true); }}
-                    style={{
-                      marginTop: '16px',
-                      background: '#0284c7',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      padding: '8px 14px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px'
-                    }}
-                  >
-                    <Play size={14} fill="white" />
-                    Riproduci Video (se disco online)
-                  </button>
+                {data?.id && (
+                  <div style={{ marginTop: '12px', display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                    <a
+                      href={ApiClient.getMediaDownloadUrl(data.id)}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{
+                        background: '#0284c7',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '8px 14px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        textDecoration: 'none'
+                      }}
+                    >
+                      <Download size={14} /> Scarica Originale
+                    </a>
+                    {targetVideoMediaId && (
+                      <button
+                        onClick={() => { setStreamError(null); setIsPlayingVideo(true); }}
+                        style={{
+                          background: '#334155',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          padding: '8px 14px',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}
+                      >
+                        <Play size={14} fill="white" />
+                        Riproduci Video
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -411,7 +685,7 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
                   <h4 style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', marginBottom: '8px' }}>
                     Metadati EXIF & Acquisizione
                   </h4>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <Calendar size={15} color="#38bdf8" />
                       <span>Data Scatto:{' '}
@@ -421,29 +695,85 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({ mediaId, onC
                       </span>
                     </div>
 
+                    {(data.place_name || (data.latitude && data.longitude)) && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <MapPin size={15} color="#22c55e" />
+                        <span>
+                          {data.place_name && <strong>{data.place_name} </strong>}
+                          {data.latitude && data.longitude && (
+                            <span style={{ color: '#94a3b8', fontSize: '12px' }}>
+                              ({data.latitude.toFixed(4)}, {data.longitude.toFixed(4)})
+                            </span>
+                          )}
+                        </span>
+                        {data.latitude && data.longitude && (
+                          <a
+                            href={`https://www.openstreetmap.org/?mlat=${data.latitude}&mlon=${data.longitude}#map=16/${data.latitude}/${data.longitude}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '2px', fontSize: '11px', marginLeft: '4px' }}
+                          >
+                            Mappa <ExternalLink size={10} />
+                          </a>
+                        )}
+                      </div>
+                    )}
+
                     {primaryFile?.metadata_json && (() => {
                       try {
                         const meta = JSON.parse(primaryFile.metadata_json);
+                        const make = meta.make || meta.Make;
+                        const model = meta.model || meta.Model;
+                        const lens = meta.lensModel || meta.LensModel || meta.lens || meta.Lens;
+                        const fNumber = meta.fNumber || meta.FNumber;
+                        const expTime = meta.exposureTime || meta.ExposureTime;
+                        const iso = meta.iso || meta.ISO || meta.ISOSpeedRatings;
+
                         return (
                           <>
-                            {(meta.make || meta.model) && (
+                            {(make || model) && (
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <Camera size={15} color="#38bdf8" />
-                                <span>Fotocamera: <strong>{[meta.make, meta.model].filter(Boolean).join(' ')}</strong></span>
+                                <span>Fotocamera: <strong>{[make, model].filter(Boolean).join(' ')}</strong></span>
                               </div>
                             )}
-                            {meta.latitude && meta.longitude && (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <MapPin size={15} color="#22c55e" />
-                                <span>GPS: <strong>{meta.latitude.toFixed(5)}, {meta.longitude.toFixed(5)}</strong></span>
-                                <a
-                                  href={`https://www.openstreetmap.org/?mlat=${meta.latitude}&mlon=${meta.longitude}#map=16/${meta.latitude}/${meta.longitude}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  style={{ color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '2px', fontSize: '11px' }}
-                                >
-                                  Mappa <ExternalLink size={10} />
-                                </a>
+                            {lens && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#cbd5e1' }}>
+                                <span style={{ color: '#64748b' }}>Obiettivo:</span>
+                                <strong>{lens}</strong>
+                              </div>
+                            )}
+                            {(fNumber || expTime || iso) && (
+                              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' }}>
+                                {fNumber && (
+                                  <span style={{ background: '#0f172a', border: '1px solid #334155', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#f8fafc' }}>
+                                    ƒ/{fNumber}
+                                  </span>
+                                )}
+                                {expTime && (
+                                  <span style={{ background: '#0f172a', border: '1px solid #334155', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#f8fafc' }}>
+                                    {expTime < 1 ? `1/${Math.round(1 / expTime)}s` : `${expTime}s`}
+                                  </span>
+                                )}
+                                {iso && (
+                                  <span style={{ background: '#0f172a', border: '1px solid #334155', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#f8fafc' }}>
+                                    ISO {iso}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            {(meta.has_apple_edits || meta.has_xmp_sidecar) && (
+                              <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+                                {meta.has_apple_edits && (
+                                  <span style={{ background: 'rgba(236, 72, 153, 0.15)', color: '#ec4899', fontSize: '10px', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                    Apple Edits (.AAE)
+                                  </span>
+                                )}
+                                {meta.has_xmp_sidecar && (
+                                  <span style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', fontSize: '10px', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                    Lightroom / XMP (.XMP)
+                                  </span>
+                                )}
                               </div>
                             )}
                           </>

@@ -21,6 +21,7 @@ export const Topbar: React.FC<TopbarProps> = ({
       case 'photos': return 'Foto';
       case 'videos': return 'Video';
       case 'favorites': return 'Preferiti';
+      case 'albums': return 'Album & Tag';
       case 'map': return 'Mappa GPS';
       case 'duplicates': return 'Duplicati';
       case 'sources': return 'Fonti & Dischi';

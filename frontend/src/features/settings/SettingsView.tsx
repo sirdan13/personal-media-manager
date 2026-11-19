@@ -1,13 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { detectBrowserCapabilities, BrowserCapabilities } from '../scanner/directoryTraverser';
 import { ApiClient } from '../../services/api';
+import { useToast } from '../../context/ToastContext';
 import {
   Cpu,
   Server,
   User,
   HardDrive,
   CheckCircle2,
-  RefreshCw
+  RefreshCw,
+  Download,
+  MapPin,
+  Wrench,
+  Database
 } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -15,11 +20,15 @@ interface SettingsViewProps {
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
+  const { toast } = useToast();
   const [capabilities, setCapabilities] = useState<BrowserCapabilities | null>(null);
   const [backendHealth, setBackendHealth] = useState<any | null>(null);
   const [storageStats, setStorageStats] = useState<any | null>(null);
   const [compacting, setCompacting] = useState(false);
   const [compactResult, setCompactResult] = useState<string | null>(null);
+  const [downloadingBackup, setDownloadingBackup] = useState(false);
+  const [runningBackfill, setRunningBackfill] = useState(false);
+  const [cleaningScans, setCleaningScans] = useState(false);
 
   const loadStorageStats = async () => {
     try {
@@ -32,7 +41,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
 
   useEffect(() => {
     setCapabilities(detectBrowserCapabilities());
-    fetch('http://localhost:8000/health')
+    fetch('/api/v1/health')
       .then((res) => res.json())
       .then(setBackendHealth)
       .catch(() => setBackendHealth({ status: 'offline' }));
@@ -43,8 +52,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
     try {
       await ApiClient.updateStorageProfile(newProfile);
       setStorageStats((prev: any) => prev ? { ...prev, thumbnail_profile: newProfile } : null);
+      toast.success(`Profilo di storage aggiornato a ${newProfile}!`);
     } catch (err) {
-      console.error('Error updating profile:', err);
+      toast.error(`Errore aggiornamento profilo: ${(err as Error).message}`);
     }
   };
 
@@ -54,12 +64,58 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
     try {
       const res = await ApiClient.compactStorage();
       const savedMb = (res.saved_bytes / (1024 * 1024)).toFixed(2);
-      setCompactResult(`Ricompatte con successo ${res.compacted_count} miniature! Risparmio: ${savedMb} MB.`);
+      const msg = `Ricompatte con successo ${res.compacted_count} miniature! Risparmio: ${savedMb} MB.`;
+      setCompactResult(msg);
+      toast.success(msg);
       await loadStorageStats();
     } catch (err) {
-      setCompactResult(`Errore durante la compattazione: ${(err as Error).message}`);
+      const errMsg = `Errore compattazione: ${(err as Error).message}`;
+      setCompactResult(errMsg);
+      toast.error(errMsg);
     } finally {
       setCompacting(false);
+    }
+  };
+
+  const handleDownloadBackup = async () => {
+    try {
+      setDownloadingBackup(true);
+      toast.info('Generazione backup consistente del database in corso...');
+      await ApiClient.downloadDatabaseBackup();
+      toast.success('Backup scaricato con successo!');
+    } catch (err) {
+      toast.error(`Errore durante il download del backup: ${(err as Error).message}`);
+    } finally {
+      setDownloadingBackup(false);
+    }
+  };
+
+  const handleBackfillGps = async () => {
+    try {
+      setRunningBackfill(true);
+      toast.info('Risoluzione inversa coordinate GPS offline in corso...');
+      const res = await ApiClient.runGeotagBackfill();
+      toast.success(`Aggiornate le località per ${res.updated_count} media!`);
+    } catch (err) {
+      toast.error(`Errore backfill GPS: ${(err as Error).message}`);
+    } finally {
+      setRunningBackfill(false);
+    }
+  };
+
+  const handleCleanupStaleScans = async () => {
+    try {
+      setCleaningScans(true);
+      const res = await ApiClient.cleanupStaleScans();
+      if (res.recovered_count > 0) {
+        toast.success(`Ripristinati ${res.recovered_count} processi di scansione interrotti!`);
+      } else {
+        toast.info('Nessuna scansione bloccata da ripristinare.');
+      }
+    } catch (err) {
+      toast.error(`Errore ripristino scansioni: ${(err as Error).message}`);
+    } finally {
+      setCleaningScans(false);
     }
   };
 
@@ -219,6 +275,148 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
               {compactResult}
             </div>
           )}
+        </div>
+      </div>
+
+      {/* WAL-Safe Database Backup & Maintenance Tools */}
+      <div style={{
+        background: '#1e293b',
+        border: '1px solid #334155',
+        borderRadius: '16px',
+        padding: '24px'
+      }}>
+        <div style={{ marginBottom: '16px' }}>
+          <h3 style={{ fontSize: '16px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+            <Database size={18} color="#38bdf8" /> Backup & Manutenzione Catalogo
+          </h3>
+          <p style={{ color: '#94a3b8', fontSize: '12px', marginTop: '4px' }}>
+            Proteggi il tuo catalogo SQLite e mantieni consistente l'indice locale senza mai toccare gli originali.
+          </p>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
+          <div style={{
+            background: '#0f172a',
+            border: '1px solid #334155',
+            borderRadius: '10px',
+            padding: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            gap: '12px'
+          }}>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Download size={16} color="#38bdf8" /> Backup Catalogo (.db)
+              </div>
+              <div style={{ color: '#94a3b8', fontSize: '11px', marginTop: '4px' }}>
+                Copia WAL-safe a caldo del database SQLite consistente per esportazione rapida.
+              </div>
+            </div>
+            <button
+              onClick={handleDownloadBackup}
+              disabled={downloadingBackup}
+              style={{
+                background: '#0284c7',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '8px 12px',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: downloadingBackup ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px'
+              }}
+            >
+              <Download size={14} />
+              {downloadingBackup ? 'Download in corso...' : 'Scarica Backup Database'}
+            </button>
+          </div>
+
+          <div style={{
+            background: '#0f172a',
+            border: '1px solid #334155',
+            borderRadius: '10px',
+            padding: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            gap: '12px'
+          }}>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <MapPin size={16} color="#10b981" /> Risoluzione Località GPS
+              </div>
+              <div style={{ color: '#94a3b8', fontSize: '11px', marginTop: '4px' }}>
+                Ricalcola offline nomi di città e nazioni per tutte le foto con coordinate lat/lon.
+              </div>
+            </div>
+            <button
+              onClick={handleBackfillGps}
+              disabled={runningBackfill}
+              style={{
+                background: '#10b981',
+                color: '#064e3b',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '8px 12px',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: runningBackfill ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px'
+              }}
+            >
+              <RefreshCw size={14} className={runningBackfill ? 'animate-spin' : ''} />
+              {runningBackfill ? 'Elaborazione...' : 'Aggiorna Località GPS'}
+            </button>
+          </div>
+
+          <div style={{
+            background: '#0f172a',
+            border: '1px solid #334155',
+            borderRadius: '10px',
+            padding: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            gap: '12px'
+          }}>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Wrench size={16} color="#f59e0b" /> Scansioni Bloccate
+              </div>
+              <div style={{ color: '#94a3b8', fontSize: '11px', marginTop: '4px' }}>
+                Sblocca fonti e job rimasti in stato 'running' a seguito di riavvio improvviso o arresto forzato.
+              </div>
+            </div>
+            <button
+              onClick={handleCleanupStaleScans}
+              disabled={cleaningScans}
+              style={{
+                background: '#334155',
+                color: '#f8fafc',
+                border: '1px solid #475569',
+                borderRadius: '6px',
+                padding: '8px 12px',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: cleaningScans ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px'
+              }}
+            >
+              <RefreshCw size={14} className={cleaningScans ? 'animate-spin' : ''} />
+              {cleaningScans ? 'Verifica...' : 'Ripristina Scansioni'}
+            </button>
+          </div>
         </div>
       </div>
 

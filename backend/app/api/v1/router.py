@@ -17,3 +17,10 @@ api_router.include_router(duplicates_router)
 api_router.include_router(settings_router)
 api_router.include_router(albums_router)
 api_router.include_router(tags_router)
+
+@api_router.get("/health", tags=["Health"])
+def healthcheck():
+    return {
+        "status": "healthy",
+        "api_version": "v1"
+    }

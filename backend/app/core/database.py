@@ -63,6 +63,16 @@ def run_db_migrations(target_engine):
         except Exception as e:
             print("Migration warning (media):", e)
 
+        # Check sources table
+        try:
+            res = conn.execute(text("PRAGMA table_info(sources)"))
+            cols = [row[1] for row in res.fetchall()]
+            if cols and "role" not in cols:
+                conn.execute(text("ALTER TABLE sources ADD COLUMN role VARCHAR(30) NOT NULL DEFAULT 'primary'"))
+                conn.commit()
+        except Exception as e:
+            print("Migration warning (sources):", e)
+
 def get_db():
     db: Session = SessionLocal()
     try:

@@ -35,7 +35,11 @@ export class ApiClient {
       throw new Error(errorData.detail || `Request failed with status ${response.status}`);
     }
 
-    return response.json();
+    if (response.status === 204) {
+      return undefined as T;
+    }
+    const text = await response.text();
+    return (text ? JSON.parse(text) : undefined) as T;
   }
 
   // Auth
@@ -66,10 +70,17 @@ export class ApiClient {
     return this.request<any[]>('/sources');
   }
 
-  public static async createSource(name: string, sourceType = 'browser_folder', rootPath?: string) {
+  public static async createSource(name: string, sourceType = 'browser_folder', rootPath?: string, role = 'primary') {
     return this.request<any>('/sources', {
       method: 'POST',
-      body: JSON.stringify({ name, source_type: sourceType, root_path: rootPath })
+      body: JSON.stringify({ name, source_type: sourceType, root_path: rootPath, role })
+    });
+  }
+
+  public static async updateSource(sourceId: string, payload: { name?: string; status?: string; root_path?: string; role?: string }) {
+    return this.request<any>(`/sources/${sourceId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload)
     });
   }
 
@@ -126,6 +137,23 @@ export class ApiClient {
     });
   }
 
+  public static async getScanStatus(scanId: string) {
+    return this.request<any>(`/scans/${scanId}`);
+  }
+
+  public static async startServerScan(sourceId: string, backfillThumbnailsOnly = false) {
+    return this.request<any>(`/scans/${sourceId}/server-scan`, {
+      method: 'POST',
+      body: JSON.stringify({ backfill_thumbnails_only: backfillThumbnailsOnly })
+    });
+  }
+
+  public static async cancelScan(scanId: string) {
+    return this.request<any>(`/scans/${scanId}/cancel`, {
+      method: 'POST'
+    });
+  }
+
   public static async completeScan(scanId: string, totalProcessed: number, failedFiles = 0, errorMessage?: string) {
     return this.request<any>(`/scans/${scanId}/complete`, {
       method: 'POST',
@@ -150,6 +178,7 @@ export class ApiClient {
     tagId?: string;
     monthKey?: string;
     isFavorite?: boolean;
+    protectionStatus?: string;
     latMin?: number;
     latMax?: number;
     lonMin?: number;
@@ -157,7 +186,28 @@ export class ApiClient {
     sortBy?: string;
     offset?: number;
     limit?: number;
-  } = {}) {
+  } = {}, signal?: AbortSignal) {
+    const res = await this.getMediaWithTotal(params, signal);
+    return res.items;
+  }
+
+  public static async getMediaWithTotal(params: {
+    mediaType?: string;
+    sourceId?: string;
+    search?: string;
+    albumId?: string;
+    tagId?: string;
+    monthKey?: string;
+    isFavorite?: boolean;
+    protectionStatus?: string;
+    latMin?: number;
+    latMax?: number;
+    lonMin?: number;
+    lonMax?: number;
+    sortBy?: string;
+    offset?: number;
+    limit?: number;
+  } = {}, signal?: AbortSignal): Promise<{ items: any[]; totalCount: number }> {
     const q = new URLSearchParams();
     if (params.mediaType) q.set('media_type', params.mediaType);
     if (params.sourceId) q.set('source_id', params.sourceId);
@@ -166,6 +216,7 @@ export class ApiClient {
     if (params.tagId) q.set('tag_id', params.tagId);
     if (params.monthKey) q.set('month_key', params.monthKey);
     if (params.isFavorite !== undefined) q.set('is_favorite', String(params.isFavorite));
+    if (params.protectionStatus) q.set('protection_status', params.protectionStatus);
     if (params.latMin !== undefined) q.set('lat_min', String(params.latMin));
     if (params.latMax !== undefined) q.set('lat_max', String(params.latMax));
     if (params.lonMin !== undefined) q.set('lon_min', String(params.lonMin));
@@ -173,7 +224,25 @@ export class ApiClient {
     if (params.sortBy) q.set('sort_by', params.sortBy);
     if (params.offset !== undefined) q.set('offset', String(params.offset));
     if (params.limit !== undefined) q.set('limit', String(params.limit));
-    return this.request<any[]>(`/media?${q.toString()}`);
+
+    const headers = new Headers();
+    if (this.token) {
+      headers.set('Authorization', `Bearer ${this.token}`);
+    }
+    const response = await fetch(`${API_BASE}/media?${q.toString()}`, {
+      headers,
+      signal
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new Error(errorData.detail || `Request failed with status ${response.status}`);
+    }
+
+    const totalHeader = response.headers.get('X-Total-Count');
+    const totalCount = totalHeader ? parseInt(totalHeader, 10) : 0;
+    const items = await response.json();
+    return { items, totalCount };
   }
 
   public static async getTimeline() {
@@ -207,12 +276,27 @@ export class ApiClient {
 
   // Albums & Tags
   public static async getAlbums() {
-    return this.request<{ id: string; user_id: string; name: string; description?: string; created_at: string; media_count: number }[]>('/albums');
+    return this.request<{
+      id: string;
+      user_id: string;
+      name: string;
+      description?: string;
+      created_at: string;
+      media_count: number;
+      cover_media_id?: string;
+    }[]>('/albums');
   }
 
   public static async createAlbum(name: string, description?: string) {
     return this.request<any>('/albums', {
       method: 'POST',
+      body: JSON.stringify({ name, description })
+    });
+  }
+
+  public static async updateAlbum(albumId: string, name?: string, description?: string) {
+    return this.request<any>(`/albums/${albumId}`, {
+      method: 'PATCH',
       body: JSON.stringify({ name, description })
     });
   }
@@ -266,21 +350,78 @@ export class ApiClient {
     return this.request<any>(`/media/${mediaId}`);
   }
 
-  public static async getDuplicates(offset = 0, limit = 50) {
-    return this.request<any[]>(`/duplicates?offset=${offset}&limit=${limit}`);
+  public static async getDuplicates(offset = 0, limit = 50, mode: 'all' | 'intra_source' | 'multi_source' = 'all') {
+    return this.request<any[]>(`/duplicates?offset=${offset}&limit=${limit}&mode=${mode}`);
   }
 
-  public static async getSimilarPhotos(maxDistance = 6) {
-    return this.request<any[]>(`/duplicates/similar?max_distance=${maxDistance}`);
+  public static async getDuplicatesSummary() {
+    return this.request<{
+      total_groups: number;
+      intra_source_groups?: number;
+      healthy_multi_source_groups?: number;
+      unprotected_media_count?: number;
+      unprotected_favorites_count?: number;
+      protected_media_count?: number;
+      protection_coverage_pct?: number;
+      intra_source_wasted_bytes?: number;
+      multi_source_backup_bytes?: number;
+      total_redundant_copies: number;
+      total_recoverable_bytes: number;
+    }>('/duplicates/summary');
   }
 
-  public static getDuplicateExportUrl(format: 'csv' | 'json'): string {
+  public static async getBackupGap(primarySourceId: string, backupSourceId: string, onlyFavorites = false) {
+    return this.request<{
+      primary_source_id: string;
+      backup_source_id: string;
+      total_primary_media: number;
+      backed_up_media: number;
+      missing_on_backup_count: number;
+      missing_on_backup_bytes: number;
+      coverage_pct: number;
+      missing_items: any[];
+    }>(`/duplicates/backup-gap?primary_source_id=${encodeURIComponent(primarySourceId)}&backup_source_id=${encodeURIComponent(backupSourceId)}&only_favorites=${onlyFavorites}`);
+  }
+
+  public static getBackupGapExportUrl(primarySourceId: string, backupSourceId: string, format: 'csv' | 'json' | 'rsync_txt', onlyFavorites = false): string {
     const token = this.getToken();
-    return `${API_BASE}/duplicates/export?format=${format}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
+    const authQuery = token ? `&token=${encodeURIComponent(token)}` : '';
+    return `${API_BASE}/duplicates/backup-gap?primary_source_id=${encodeURIComponent(primarySourceId)}&backup_source_id=${encodeURIComponent(backupSourceId)}&export_format=${format}&only_favorites=${onlyFavorites}${authQuery}`;
+  }
+
+  public static async getSimilarPhotos(maxDistance = 6, maxTimeDiffHours?: number) {
+    let url = `/duplicates/similar?max_distance=${maxDistance}`;
+    if (maxTimeDiffHours !== undefined) {
+      url += `&max_time_diff_hours=${maxTimeDiffHours}`;
+    }
+    return this.request<any[]>(url);
+  }
+
+  public static getDuplicateExportUrl(format: 'csv' | 'json', preferredSourceId?: string, mode: 'all' | 'intra_source' | 'multi_source' = 'all'): string {
+    const token = this.getToken();
+    let url = `${API_BASE}/duplicates/export?format=${format}&mode=${mode}`;
+    if (preferredSourceId) {
+      url += `&preferred_source_id=${encodeURIComponent(preferredSourceId)}`;
+    }
+    if (token) {
+      url += `&token=${encodeURIComponent(token)}`;
+    }
+    return url;
   }
 
   public static getThumbnailUrl(mediaId: string): string {
-    return `${API_BASE}/media/${mediaId}/thumbnail`;
+    const token = this.getToken();
+    return `${API_BASE}/media/${mediaId}/thumbnail${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+  }
+
+  public static getMediaDownloadUrl(mediaId: string): string {
+    const token = this.getToken();
+    return `${API_BASE}/media/${mediaId}/stream?download=true${token ? `&token=${encodeURIComponent(token)}` : ''}`;
+  }
+
+  public static getMediaPreviewUrl(mediaId: string, maxEdge = 1920): string {
+    const token = this.getToken();
+    return `${API_BASE}/media/${mediaId}/preview?max_edge=${maxEdge}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
   }
 
   public static getMediaStreamUrl(mediaId: string): string {
@@ -314,6 +455,53 @@ export class ApiClient {
       saved_bytes: number;
       profile_applied: string;
     }>('/settings/storage/compact', {
+      method: 'POST'
+    });
+  }
+
+  public static getDatabaseBackupUrl(): string {
+    const token = this.getToken();
+    return `${API_BASE}/settings/backup/db${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+  }
+
+  public static async downloadDatabaseBackup(): Promise<void> {
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`${API_BASE}/settings/backup/db`, {
+      method: 'GET',
+      headers
+    });
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      throw new Error(errJson.detail || `Backup fallito con codice ${res.status}`);
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get('content-disposition');
+    let filename = 'personal_media_manager_backup.db';
+    if (disposition && disposition.includes('filename=')) {
+      const match = disposition.match(/filename="?([^";]+)"?/);
+      if (match && match[1]) filename = match[1];
+    }
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  }
+
+  public static async runGeotagBackfill(): Promise<{ updated_count: number }> {
+    return this.request<{ updated_count: number }>('/settings/maintenance/geotag-backfill', {
+      method: 'POST'
+    });
+  }
+
+  public static async cleanupStaleScans(): Promise<{ recovered_count: number }> {
+    return this.request<{ recovered_count: number }>('/settings/maintenance/cleanup-stale-scans', {
       method: 'POST'
     });
   }

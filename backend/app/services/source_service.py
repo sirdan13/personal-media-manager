@@ -4,7 +4,8 @@ from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from fastapi import HTTPException, status
-from app.models.entities import Source, File, Thumbnail
+from app.models.entities import Source, File, Thumbnail, Media
+from app.core.config import settings
 from app.schemas.source import SourceCreate, SourceUpdate, SourceOut
 
 def get_user_sources(db: Session, user_id: str) -> List[SourceOut]:
@@ -35,6 +36,7 @@ def get_user_sources(db: Session, user_id: str) -> List[SourceOut]:
             device_id=s.device_id,
             name=s.name,
             source_type=s.source_type,
+            role=getattr(s, "role", "primary") or "primary",
             root_path=s.root_path,
             persistent_identifier=s.persistent_identifier,
             status=computed_status,
@@ -59,6 +61,7 @@ def create_source(db: Session, user_id: str, source_in: SourceCreate) -> Source:
         user_id=user_id,
         name=source_in.name,
         source_type=source_in.source_type,
+        role=source_in.role or "primary",
         root_path=source_in.root_path,
         persistent_identifier=source_in.persistent_identifier,
         status="online"
@@ -74,6 +77,8 @@ def update_source(db: Session, user_id: str, source_id: str, source_in: SourceUp
         source.name = source_in.name
     if source_in.status is not None:
         source.status = source_in.status
+    if source_in.role is not None:
+        source.role = source_in.role
     if source_in.root_path is not None:
         source.root_path = source_in.root_path
     
@@ -92,12 +97,36 @@ def delete_source(db: Session, user_id: str, source_id: str) -> None:
 
     # Clean up orphan media entities that have no remaining physical files anywhere
     if affected_media_ids:
-        orphans = db.query(Media.id).outerjoin(File, Media.id == File.media_id)\
-                    .filter(Media.id.in_(affected_media_ids), File.id.is_(None)).all()
-        orphan_ids = [o[0] for o in orphans]
-        if orphan_ids:
-            db.query(Media).filter(Media.id.in_(orphan_ids)).delete(synchronize_session=False)
-            db.commit()
+        chunk_size = 500
+        all_orphan_ids = []
+        for i in range(0, len(affected_media_ids), chunk_size):
+            chunk = affected_media_ids[i:i + chunk_size]
+            orphans = db.query(Media.id).outerjoin(File, Media.id == File.media_id)\
+                        .filter(Media.id.in_(chunk), File.id.is_(None)).all()
+            all_orphan_ids.extend([o[0] for o in orphans])
+
+        if all_orphan_ids:
+            for i in range(0, len(all_orphan_ids), chunk_size):
+                chunk = all_orphan_ids[i:i + chunk_size]
+                # Collect thumbnail paths before deleting Media (which cascades to Thumbnail)
+                thumbs = db.query(Thumbnail.storage_path).filter(Thumbnail.media_id.in_(chunk)).all()
+                thumb_paths = [t[0] for t in thumbs if t[0]]
+
+                # Explicitly delete dependent relation rows to be resilient across all SQLite configs
+                db.query(Thumbnail).filter(Thumbnail.media_id.in_(chunk)).delete(synchronize_session=False)
+                db.query(Media).filter(Media.id.in_(chunk)).delete(synchronize_session=False)
+                db.commit()
+
+                # Clean physical thumbnail files on disk if not referenced elsewhere
+                for p in thumb_paths:
+                    remaining = db.query(Thumbnail).filter(Thumbnail.storage_path == p).first()
+                    if not remaining:
+                        full_path = os.path.join(settings.THUMBNAILS_DIR, p)
+                        try:
+                            if os.path.isfile(full_path):
+                                os.remove(full_path)
+                        except OSError:
+                            pass
 
 def get_source_file_fingerprints(db: Session, user_id: str, source_id: str) -> dict:
     get_source_by_id(db, user_id, source_id) # ownership check

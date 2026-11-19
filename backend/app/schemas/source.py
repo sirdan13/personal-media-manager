@@ -5,12 +5,14 @@ from datetime import datetime
 class SourceCreate(BaseModel):
     name: str
     source_type: str = "browser_folder"
+    role: Optional[str] = "primary"
     root_path: Optional[str] = None
     persistent_identifier: Optional[str] = None
 
 class SourceUpdate(BaseModel):
     name: Optional[str] = None
     status: Optional[str] = None
+    role: Optional[str] = None
     root_path: Optional[str] = None
 
 class SourceOut(BaseModel):
@@ -19,6 +21,7 @@ class SourceOut(BaseModel):
     device_id: Optional[str] = None
     name: str
     source_type: str
+    role: str = "primary"
     root_path: Optional[str] = None
     persistent_identifier: Optional[str] = None
     status: str

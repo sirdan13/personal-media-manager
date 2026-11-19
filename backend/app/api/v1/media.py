@@ -1,6 +1,6 @@
 import os
 from typing import List, Optional
-from fastapi import APIRouter, Depends, Query, HTTPException, status
+from fastapi import APIRouter, Depends, Query, HTTPException, status, Response
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -14,9 +14,23 @@ from app.services.media_service import (
     toggle_media_favorite,
     batch_set_favorite
 )
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_current_user_from_header_or_query
 from app.models.entities import User, Thumbnail, Media, File, Source
 from app.core.config import settings
+
+def resolve_safe_source_file(root_path: str, relative_path: str) -> Optional[str]:
+    if not root_path or not relative_path:
+        return None
+    try:
+        real_root = os.path.realpath(root_path)
+        real_target = os.path.realpath(os.path.join(real_root, relative_path))
+        if os.path.commonpath([real_root, real_target]) != real_root:
+            return None
+        if os.path.isfile(real_target):
+            return real_target
+    except (ValueError, OSError):
+        return None
+    return None
 
 router = APIRouter(prefix="/media", tags=["Libreria Media"])
 
@@ -29,6 +43,7 @@ def get_media_list(
     tag_id: Optional[str] = Query(None, description="Filtro per tag"),
     month_key: Optional[str] = Query(None, description="Filtro per mese (YYYY-MM)"),
     is_favorite: Optional[bool] = Query(None, description="Filtro solo preferiti"),
+    protection_status: Optional[str] = Query(None, description="Filtro per stato protezione (unprotected, protected, intra_source_duplicate)"),
     lat_min: Optional[float] = Query(None, description="Latitudine minima per filtro geografico"),
     lat_max: Optional[float] = Query(None, description="Latitudine massima per filtro geografico"),
     lon_min: Optional[float] = Query(None, description="Longitudine minima per filtro geografico"),
@@ -36,10 +51,11 @@ def get_media_list(
     sort_by: str = Query("date_desc", description="Ordinamento: date_desc, date_asc, name_asc, name_desc, size_desc, size_asc"),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
+    response: Response = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    return list_user_media(
+    items, total_count = list_user_media(
         db, current_user.id,
         media_type=media_type,
         source_id=source_id,
@@ -48,14 +64,19 @@ def get_media_list(
         tag_id=tag_id,
         month_key=month_key,
         is_favorite=is_favorite,
+        protection_status=protection_status,
         lat_min=lat_min,
         lat_max=lat_max,
         lon_min=lon_min,
         lon_max=lon_max,
         sort_by=sort_by,
         offset=offset,
-        limit=limit
+        limit=limit,
+        include_total=True
     )
+    if response is not None:
+        response.headers["X-Total-Count"] = str(total_count)
+    return items
 
 @router.post("/{media_id}/favorite")
 def toggle_favorite(
@@ -109,8 +130,13 @@ def get_media(
 @router.get("/{media_id}/thumbnail")
 def get_thumbnail(
     media_id: str,
+    current_user: User = Depends(get_current_user_from_header_or_query),
     db: Session = Depends(get_db)
 ):
+    media = db.query(Media).filter(Media.id == media_id, Media.user_id == current_user.id).first()
+    if not media:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media non trovato")
+
     thumb = db.query(Thumbnail).filter(Thumbnail.media_id == media_id).first()
     if not thumb:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Miniatura non presente")
@@ -135,31 +161,82 @@ def get_thumbnail(
         path=full_path,
         media_type=f"image/{thumb.format}",
         filename=f"{thumb.media_id[:12]}.{thumb.format}",
-        headers={"Cache-Control": "public, max-age=604800"}
+        headers={"Cache-Control": "private, max-age=604800"}
     )
 
 @router.get("/{media_id}/stream")
 def stream_media(
     media_id: str,
-    token: Optional[str] = Query(None),
+    download: bool = Query(False, description="Se true forza il download come attachment"),
+    current_user: User = Depends(get_current_user_from_header_or_query),
     db: Session = Depends(get_db)
 ):
-    files = db.query(File, Source).join(Source, File.source_id == Source.id)\
-              .filter(File.media_id == media_id).all()
-    if not files:
+    media = db.query(Media).filter(Media.id == media_id, Media.user_id == current_user.id).first()
+    if not media:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media non trovato")
+
+    files = db.query(File, Source).join(Source, File.source_id == Source.id)\
+              .filter(File.media_id == media_id, Source.user_id == current_user.id).all()
+    if not files:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File non trovato")
 
     for f, s in files:
         if s.root_path:
-            full_path = os.path.join(s.root_path, f.relative_path)
-            if os.path.isfile(full_path):
+            safe_path = resolve_safe_source_file(s.root_path, f.relative_path)
+            if safe_path:
                 return FileResponse(
-                    path=full_path,
+                    path=safe_path,
                     media_type=f.mime_type or "application/octet-stream",
-                    filename=f.filename
+                    filename=f.filename,
+                    content_disposition_type="attachment" if download else "inline"
                 )
 
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Disco offline o file non accessibile direttamente dal server"
+    )
+
+@router.get("/{media_id}/preview")
+def get_media_preview(
+    media_id: str,
+    max_edge: int = Query(1920, ge=400, le=3840),
+    current_user: User = Depends(get_current_user_from_header_or_query),
+    db: Session = Depends(get_db)
+):
+    media = db.query(Media).filter(Media.id == media_id, Media.user_id == current_user.id).first()
+    if not media:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media non trovato")
+
+    files = db.query(File, Source).join(Source, File.source_id == Source.id)\
+              .filter(File.media_id == media_id, Source.user_id == current_user.id).all()
+    if not files:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File non trovato")
+
+    for f, s in files:
+        if s.root_path:
+            safe_path = resolve_safe_source_file(s.root_path, f.relative_path)
+            if safe_path:
+                from app.services.media_preview_service import generate_image_preview_bytes
+                preview_bytes, w, h, _, _ = generate_image_preview_bytes(
+                    safe_path, max_edge=max_edge, quality=88, fmt="JPEG"
+                )
+                if preview_bytes:
+                    return Response(
+                        content=preview_bytes,
+                        media_type="image/jpeg",
+                        headers={"Cache-Control": "private, max-age=3600"}
+                    )
+                # Fallback: if web native image <= 8MB
+                ext = (f.extension or "").lower()
+                if ext in {"jpg", "jpeg", "png", "webp", "gif"} and f.size_bytes <= 8 * 1024 * 1024:
+                    return FileResponse(
+                        path=safe_path,
+                        media_type=f.mime_type or "image/jpeg",
+                        filename=f.filename,
+                        headers={"Cache-Control": "private, max-age=3600"}
+                    )
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Disco offline o anteprima non generabile per questo media"
     )

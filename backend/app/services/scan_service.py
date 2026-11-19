@@ -86,3 +86,28 @@ def complete_scan_job(
     db.commit()
     db.refresh(job)
     return job
+
+def recover_stale_scans(db: Session) -> int:
+    """
+    Recovers scan jobs left in 'running' status (e.g. if the backend crashed or was restarted).
+    Marks them as 'failed' with error_message='Processo interrotto (riavvio server)'.
+    Restores sources in 'scanning' status to 'online' (or 'offline' if root_path missing).
+    """
+    import os
+    stale_jobs = db.query(ScanJob).filter(ScanJob.status == "running").all()
+    count = len(stale_jobs)
+    for job in stale_jobs:
+        job.status = "failed"
+        job.error_message = "Processo interrotto (riavvio server)"
+        job.completed_at = datetime.now(timezone.utc)
+        
+    stale_sources = db.query(Source).filter(Source.status == "scanning").all()
+    for s in stale_sources:
+        if s.root_path and not os.path.exists(s.root_path):
+            s.status = "offline"
+        else:
+            s.status = "online"
+
+    if count or stale_sources:
+        db.commit()
+    return count

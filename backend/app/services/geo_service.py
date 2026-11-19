@@ -1,4 +1,4 @@
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.models.entities import Media
@@ -26,6 +26,71 @@ def init_geo_places_cache(engine):
 def coord_to_key(lat: float, lon: float) -> str:
     """Rounds coordinates to ~1km precision (2 decimals) for cache pooling."""
     return f"{lat:.2f},{lon:.2f}"
+
+def resolve_and_cache_places_batch(db: Session, coords: List[Tuple[float, float]]) -> Dict[str, str]:
+    """
+    Batch resolves coordinates against geo_places cache and reverse_geocoder.
+    Returns mapping {coord_key: place_name}.
+    Does NOT commit in intermediate steps; flushes newly inserted cache rows.
+    """
+    if not coords:
+        return {}
+
+    unique_keys: Dict[str, Tuple[float, float]] = {}
+    for lat, lon in coords:
+        if lat is not None and lon is not None:
+            k = coord_to_key(lat, lon)
+            if k not in unique_keys:
+                unique_keys[k] = (lat, lon)
+
+    if not unique_keys:
+        return {}
+
+    resolved: Dict[str, str] = {}
+    keys_list = list(unique_keys.keys())
+    chunk_size = 500
+    for i in range(0, len(keys_list), chunk_size):
+        chunk = keys_list[i:i + chunk_size]
+        params = {f"k{idx}": k for idx, k in enumerate(chunk)}
+        in_clause = ", ".join(f":k{idx}" for idx in range(len(chunk)))
+        sql = f"SELECT coord_key, place_name FROM geo_places WHERE coord_key IN ({in_clause})"
+        rows = db.execute(text(sql), params).fetchall()
+        for r in rows:
+            resolved[r[0]] = r[1]
+
+    missing_keys = [k for k in keys_list if k not in resolved]
+
+    if missing_keys and HAS_RG:
+        missing_coords = [unique_keys[k] for k in missing_keys]
+        try:
+            results = rg.search(missing_coords, verbose=False)
+            inserted = False
+            for k, res in zip(missing_keys, results):
+                city = res.get('name')
+                admin2 = res.get('admin2')
+                admin1 = res.get('admin1')
+                cc = res.get('cc')
+
+                parts = []
+                if city: parts.append(city)
+                if admin2 and admin2 != city: parts.append(admin2)
+                elif admin1 and admin1 != city: parts.append(admin1)
+                if cc: parts.append(cc)
+
+                place_name = ", ".join(parts) if parts else city
+                if place_name:
+                    resolved[k] = place_name
+                    db.execute(
+                        text("INSERT OR REPLACE INTO geo_places (coord_key, place_name, city, country) VALUES (:k, :p, :c, :cc)"),
+                        {"k": k, "p": place_name, "c": city, "cc": cc}
+                    )
+                    inserted = True
+            if inserted:
+                db.flush()
+        except Exception as e:
+            print(f"Batch reverse geocode error: {e}")
+
+    return resolved
 
 def resolve_and_cache_place(db: Session, lat: float, lon: float) -> Optional[str]:
     """Resolves coordinates offline with reverse_geocoder (instant and 100% private)."""

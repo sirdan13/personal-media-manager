@@ -10,6 +10,7 @@ import { SourcesView } from './features/sources/SourcesView';
 import { ScansView } from './features/scans/ScansView';
 import { SettingsView } from './features/settings/SettingsView';
 import { MapView } from './features/map/MapView';
+import { AlbumsView } from './features/albums/AlbumsView';
 import { TutorialModal } from './components/TutorialModal';
 import { Grid, Image as ImageIcon, Heart, MapPin, LayoutDashboard } from 'lucide-react';
 
@@ -19,6 +20,8 @@ export const App: React.FC = () => {
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
   const [sourceToScan, setSourceToScan] = useState<any | null>(null);
+  const [selectedAlbumId, setSelectedAlbumId] = useState<string | null>(null);
+  const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
   const [geoFilter, setGeoFilter] = useState<{ latMin: number; latMax: number; lonMin: number; lonMax: number; label?: string } | null>(null);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [initializing, setInitializing] = useState(true);
@@ -125,7 +128,11 @@ export const App: React.FC = () => {
             <LibraryView
               initialType="all"
               initialGeoFilter={geoFilter}
+              initialAlbumId={selectedAlbumId}
+              initialTagId={selectedTagId}
               onClearGeoFilter={() => setGeoFilter(null)}
+              onClearAlbumFilter={() => setSelectedAlbumId(null)}
+              onClearTagFilter={() => setSelectedTagId(null)}
             />
           )}
 
@@ -133,7 +140,11 @@ export const App: React.FC = () => {
             <LibraryView
               initialType="image"
               initialGeoFilter={geoFilter}
+              initialAlbumId={selectedAlbumId}
+              initialTagId={selectedTagId}
               onClearGeoFilter={() => setGeoFilter(null)}
+              onClearAlbumFilter={() => setSelectedAlbumId(null)}
+              onClearTagFilter={() => setSelectedTagId(null)}
             />
           )}
 
@@ -141,7 +152,11 @@ export const App: React.FC = () => {
             <LibraryView
               initialType="video"
               initialGeoFilter={geoFilter}
+              initialAlbumId={selectedAlbumId}
+              initialTagId={selectedTagId}
               onClearGeoFilter={() => setGeoFilter(null)}
+              onClearAlbumFilter={() => setSelectedAlbumId(null)}
+              onClearTagFilter={() => setSelectedTagId(null)}
             />
           )}
 
@@ -150,7 +165,26 @@ export const App: React.FC = () => {
               initialType="all"
               initialFavorite={true}
               initialGeoFilter={geoFilter}
+              initialAlbumId={selectedAlbumId}
+              initialTagId={selectedTagId}
               onClearGeoFilter={() => setGeoFilter(null)}
+              onClearAlbumFilter={() => setSelectedAlbumId(null)}
+              onClearTagFilter={() => setSelectedTagId(null)}
+            />
+          )}
+
+          {currentTab === 'albums' && (
+            <AlbumsView
+              onSelectAlbum={(albumId) => {
+                setSelectedAlbumId(albumId);
+                setSelectedTagId(null);
+                setCurrentTab('library');
+              }}
+              onSelectTag={(tagId) => {
+                setSelectedTagId(tagId);
+                setSelectedAlbumId(null);
+                setCurrentTab('library');
+              }}
             />
           )}
 

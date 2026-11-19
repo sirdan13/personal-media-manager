@@ -10,7 +10,8 @@ import {
   Settings,
   LogOut,
   MapPin,
-  Heart
+  Heart,
+  Folder
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -36,6 +37,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'photos', label: 'Fotografie', icon: Image },
     { id: 'videos', label: 'Video', icon: Video },
     { id: 'favorites', label: 'Preferiti', icon: Heart, color: '#f43f5e' },
+    { id: 'albums', label: 'Album & Tag', icon: Folder },
     { id: 'map', label: 'Mappa GPS', icon: MapPin },
     { id: 'duplicates', label: 'Duplicati', icon: Copy, badge: 'Smart' },
     { id: 'sources', label: 'Fonti & Dischi', icon: HardDrive },

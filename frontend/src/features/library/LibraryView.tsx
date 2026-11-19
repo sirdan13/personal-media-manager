@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { ApiClient } from '../../services/api';
+import { useToast } from '../../context/ToastContext';
 import {
   Search,
   ArrowUpDown,
@@ -12,7 +13,9 @@ import {
   Heart,
   CheckSquare,
   Square,
-  Play
+  Play,
+  Folder,
+  Tag as TagIcon
 } from 'lucide-react';
 import { isRawExtension } from '../scanner/formatDetector';
 import { MediaDetailModal } from './MediaDetailModal';
@@ -20,6 +23,8 @@ import { MediaDetailModal } from './MediaDetailModal';
 interface LibraryViewProps {
   initialType?: string; // 'all' | 'image' | 'video'
   initialFavorite?: boolean;
+  initialAlbumId?: string | null;
+  initialTagId?: string | null;
   initialGeoFilter?: {
     latMin: number;
     latMax: number;
@@ -28,14 +33,21 @@ interface LibraryViewProps {
     label?: string;
   } | null;
   onClearGeoFilter?: () => void;
+  onClearAlbumFilter?: () => void;
+  onClearTagFilter?: () => void;
 }
 
 export const LibraryView: React.FC<LibraryViewProps> = ({
   initialType = 'all',
   initialFavorite = false,
+  initialAlbumId = null,
+  initialTagId = null,
   initialGeoFilter = null,
-  onClearGeoFilter
+  onClearGeoFilter,
+  onClearAlbumFilter,
+  onClearTagFilter
 }) => {
+  const { toast } = useToast();
   const [viewMode, setViewMode] = useState<'grid' | 'timeline'>('grid');
   const [mediaList, setMediaList] = useState<any[]>([]);
   const [sources, setSources] = useState<any[]>([]);
@@ -49,7 +61,10 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   const [selectedMonthKey, setSelectedMonthKey] = useState<string>('');
   const [onlyFavorites, setOnlyFavorites] = useState<boolean>(initialFavorite);
   const [mediaType, setMediaType] = useState<string>(initialType === 'all' ? '' : initialType);
+  const [protectionStatus, setProtectionStatus] = useState<string>('');
   const [search, setSearch] = useState<string>('');
+  const [debouncedSearch, setDebouncedSearch] = useState<string>('');
+  const [totalCount, setTotalCount] = useState<number | null>(null);
   const [geoFilter, setGeoFilter] = useState<{ latMin: number; latMax: number; lonMin: number; lonMax: number; label?: string } | null>(initialGeoFilter);
   const [sortBy, setSortBy] = useState<string>('date_desc');
   const [offset, setOffset] = useState<number>(0);
@@ -78,6 +93,20 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     setMediaList([]);
   }, [initialGeoFilter]);
 
+  useEffect(() => {
+    if (initialAlbumId) {
+      setSelectedAlbum(initialAlbumId);
+      setOffset(0);
+    }
+  }, [initialAlbumId]);
+
+  useEffect(() => {
+    if (initialTagId) {
+      setSelectedTag(initialTagId);
+      setOffset(0);
+    }
+  }, [initialTagId]);
+
   // Load sources, albums, tags, and timeline buckets on mount
   useEffect(() => {
     if (!ApiClient.getToken()) return;
@@ -87,20 +116,32 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     ApiClient.getTimeline().then(setTimelineBuckets).catch(() => setTimelineBuckets([]));
   }, []);
 
-  // Fetch media on filter changes
+  // Debounce search input by 300ms
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+      setOffset(0);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // Fetch media on filter changes with AbortController
   useEffect(() => {
     if (!ApiClient.getToken()) return;
+    const controller = new AbortController();
+
     const fetchMedia = async () => {
       setLoading(true);
       try {
-        const items = await ApiClient.getMedia({
+        const { items, totalCount: count } = await ApiClient.getMediaWithTotal({
           mediaType: mediaType || undefined,
           sourceId: selectedSource || undefined,
-          search: search.trim() || undefined,
+          search: debouncedSearch.trim() || undefined,
           albumId: selectedAlbum || undefined,
           tagId: selectedTag || undefined,
           monthKey: selectedMonthKey || undefined,
           isFavorite: onlyFavorites ? true : undefined,
+          protectionStatus: protectionStatus || undefined,
           latMin: geoFilter?.latMin,
           latMax: geoFilter?.latMax,
           lonMin: geoFilter?.lonMin,
@@ -108,7 +149,9 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           sortBy,
           offset,
           limit
-        });
+        }, controller.signal);
+
+        setTotalCount(count);
 
         if (offset === 0) {
           setMediaList(items);
@@ -117,14 +160,17 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         }
         setHasMore(items.length === limit);
       } catch (err) {
-        console.error('Error fetching media:', err);
+        if ((err as Error).name !== 'AbortError') {
+          console.error('Error fetching media:', err);
+        }
       } finally {
         setLoading(false);
       }
     };
 
     fetchMedia();
-  }, [mediaType, selectedSource, search, selectedAlbum, selectedTag, selectedMonthKey, onlyFavorites, geoFilter, sortBy, offset, limit]);
+    return () => controller.abort();
+  }, [mediaType, selectedSource, debouncedSearch, selectedAlbum, selectedTag, selectedMonthKey, onlyFavorites, protectionStatus, geoFilter, sortBy, offset, limit]);
 
   const handleFilterChange = () => {
     setOffset(0);
@@ -135,8 +181,9 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     try {
       const res = await ApiClient.toggleFavorite(id);
       setMediaList((prev) => prev.map((m) => m.id === id ? { ...m, is_favorite: res.is_favorite } : m));
+      toast.success(res.is_favorite ? 'Aggiunto ai preferiti ❤️' : 'Rimosso dai preferiti');
     } catch (err) {
-      alert((err as Error).message);
+      toast.error((err as Error).message);
     }
   };
 
@@ -164,10 +211,11 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     try {
       await ApiClient.batchFavorite(ids, makeFavorite);
       setMediaList((prev) => prev.map((m) => ids.includes(m.id) ? { ...m, is_favorite: makeFavorite } : m));
+      toast.success(makeFavorite ? `Aggiunti ${ids.length} ai preferiti` : `Rimossi ${ids.length} dai preferiti`);
       setSelectedIds(new Set());
       setIsSelectionMode(false);
     } catch (err) {
-      alert((err as Error).message);
+      toast.error((err as Error).message);
     }
   };
 
@@ -176,11 +224,11 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     if (ids.length === 0 || !albumId) return;
     try {
       await ApiClient.addMediaToAlbum(albumId, ids);
-      alert(`Aggiunti ${ids.length} elementi all'album!`);
+      toast.success(`Aggiunti ${ids.length} elementi all'album!`);
       setSelectedIds(new Set());
       setIsSelectionMode(false);
     } catch (err) {
-      alert((err as Error).message);
+      toast.error((err as Error).message);
     }
   };
 
@@ -189,11 +237,11 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     if (ids.length === 0 || !tagId) return;
     try {
       await ApiClient.addMediaToTag(tagId, ids);
-      alert(`Aggiunto il tag a ${ids.length} elementi!`);
+      toast.success(`Aggiunto il tag a ${ids.length} elementi!`);
       setSelectedIds(new Set());
       setIsSelectionMode(false);
     } catch (err) {
-      alert((err as Error).message);
+      toast.error((err as Error).message);
     }
   };
 
@@ -253,7 +301,13 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       }}
       style={{
         background: '#1e293b',
-        border: isSelected ? '2px solid #38bdf8' : (media.copies_count > 1 ? '1px solid #f59e0b' : '1px solid #334155'),
+        border: isSelected
+          ? '2px solid #38bdf8'
+          : (media.protection_status === 'intra_source_duplicate'
+              ? '1px solid #f59e0b'
+              : (media.protection_status === 'protected'
+                  ? '1px solid rgba(34, 197, 94, 0.4)'
+                  : '1px solid #334155')),
         borderRadius: '10px',
         overflow: 'hidden',
         cursor: 'pointer',
@@ -395,8 +449,45 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           </span>
         )}
 
-        {/* Multiple copies badge */}
-        {media.copies_count > 1 && (
+        {/* Protection / Multiple copies badge */}
+        {media.protection_status === 'protected' ? (
+          <span style={{
+            position: 'absolute',
+            top: '8px',
+            right: '42px',
+            background: '#22c55e',
+            color: '#064e3b',
+            fontSize: '10px',
+            fontWeight: 800,
+            padding: '2px 7px',
+            borderRadius: '4px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.5)'
+          }}>
+            🛡️ {media.distinct_sources_count || 2} DISCHI
+          </span>
+        ) : media.protection_status === 'intra_source_duplicate' ? (
+          <span style={{
+            position: 'absolute',
+            top: '8px',
+            right: '42px',
+            background: '#f59e0b',
+            color: '#0f172a',
+            fontSize: '10px',
+            fontWeight: 800,
+            padding: '2px 7px',
+            borderRadius: '4px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.5)'
+          }}>
+            <Copy size={11} />
+            ⚠️ {media.copies_count} COPIE · {media.distinct_sources_count || 1} {(media.distinct_sources_count || 1) === 1 ? 'DISCO' : 'DISCHI'}
+          </span>
+        ) : (!media.protection_status && media.copies_count > 1) ? (
           <span style={{
             position: 'absolute',
             top: '8px',
@@ -415,7 +506,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             <Copy size={11} />
             {media.copies_count} COPIE
           </span>
-        )}
+        ) : null}
       </div>
 
       {/* Media Details Footer */}
@@ -494,6 +585,84 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             }}
           >
             Rimuovi Filtro Mappa
+          </button>
+        </div>
+      )}
+
+      {/* Active Album Filter Pill */}
+      {selectedAlbum && (
+        <div style={{
+          background: 'rgba(56, 189, 248, 0.15)',
+          border: '1px solid #38bdf8',
+          borderRadius: '8px',
+          padding: '10px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          color: '#38bdf8',
+          fontSize: '13px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Folder size={16} />
+            <span>Filtrato per album: <strong>{albums.find((a) => a.id === selectedAlbum)?.name || selectedAlbum}</strong></span>
+          </div>
+          <button
+            onClick={() => {
+              setSelectedAlbum('');
+              onClearAlbumFilter?.();
+              handleFilterChange();
+            }}
+            style={{
+              background: '#0284c7',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              padding: '4px 10px',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            Rimuovi Filtro Album
+          </button>
+        </div>
+      )}
+
+      {/* Active Tag Filter Pill */}
+      {selectedTag && (
+        <div style={{
+          background: 'rgba(236, 72, 153, 0.15)',
+          border: '1px solid #ec4899',
+          borderRadius: '8px',
+          padding: '10px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          color: '#ec4899',
+          fontSize: '13px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <TagIcon size={16} />
+            <span>Filtrato per tag: <strong>{tags.find((t) => t.id === selectedTag)?.name || selectedTag}</strong></span>
+          </div>
+          <button
+            onClick={() => {
+              setSelectedTag('');
+              onClearTagFilter?.();
+              handleFilterChange();
+            }}
+            style={{
+              background: '#ec4899',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              padding: '4px 10px',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            Rimuovi Filtro Tag
           </button>
         </div>
       )}
@@ -766,6 +935,25 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             ))}
           </select>
 
+          {/* Protection / Backup status filter dropdown */}
+          <select
+            value={protectionStatus}
+            onChange={(e) => { setProtectionStatus(e.target.value); handleFilterChange(); }}
+            style={{
+              background: '#0f172a',
+              color: 'white',
+              border: '1px solid #334155',
+              borderRadius: '8px',
+              padding: '7px 10px',
+              fontSize: '12px'
+            }}
+          >
+            <option value="">🛡️ Tutti gli stati backup</option>
+            <option value="protected">🟢 Protetti (2+ Dischi)</option>
+            <option value="unprotected">🔴 A Rischio (1 Solo Disco)</option>
+            <option value="intra_source_duplicate">🟠 Duplicati Intra-Disco (Spreco)</option>
+          </select>
+
           {/* Sort order dropdown */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <ArrowUpDown size={14} color="#94a3b8" />
@@ -851,6 +1039,38 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             </button>
 
             {/* Batch Add Album */}
+            <button
+              onClick={async () => {
+                const name = window.prompt("Nome del nuovo album virtuale:");
+                if (!name || !name.trim()) return;
+                try {
+                  const created = await ApiClient.createAlbum(name.trim());
+                  await ApiClient.addMediaToAlbum(created.id, Array.from(selectedIds));
+                  const updatedAlbums = await ApiClient.getAlbums();
+                  setAlbums(updatedAlbums);
+                  toast.success(`Album "${created.name}" creato con ${selectedIds.size} foto!`);
+                  setSelectedIds(new Set());
+                } catch (err) {
+                  toast.error((err as Error).message);
+                }
+              }}
+              style={{
+                background: '#0284c7',
+                border: 'none',
+                color: 'white',
+                borderRadius: '6px',
+                padding: '6px 12px',
+                fontSize: '12px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer'
+              }}
+            >
+              <Folder size={14} /> + Crea Album
+            </button>
+
             {albums.length > 0 && (
               <select
                 onChange={(e) => {
@@ -972,6 +1192,13 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         </div>
       )}
 
+      {/* Discretionary Total Count Banner */}
+      {totalCount !== null && totalCount > 0 && (
+        <div style={{ fontSize: '12px', color: '#94a3b8', display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '-4px 0 -4px 0' }}>
+          <span>Visualizzati <strong>{mediaList.length}</strong> di <strong>{totalCount}</strong> elementi</span>
+        </div>
+      )}
+
       {/* Main Content Area */}
       {mediaList.length === 0 && !loading ? (
         <div style={{
@@ -1051,10 +1278,24 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       )}
 
       {/* Modal for Media Details */}
-      <MediaDetailModal
-        mediaId={selectedMediaId}
-        onClose={() => setSelectedMediaId(null)}
-      />
+      {(() => {
+        const currentIdx = mediaList.findIndex((m) => m.id === selectedMediaId);
+        const hasPrev = currentIdx > 0;
+        const hasNext = currentIdx >= 0 && currentIdx < mediaList.length - 1;
+        return (
+          <MediaDetailModal
+            mediaId={selectedMediaId}
+            onClose={() => setSelectedMediaId(null)}
+            hasPrev={hasPrev}
+            hasNext={hasNext}
+            onPrev={() => hasPrev && setSelectedMediaId(mediaList[currentIdx - 1].id)}
+            onNext={() => hasNext && setSelectedMediaId(mediaList[currentIdx + 1].id)}
+            onFavoriteChanged={(id, isFav) => {
+              setMediaList((prev) => prev.map((m) => m.id === id ? { ...m, is_favorite: isFav } : m));
+            }}
+          />
+        );
+      })()}
     </div>
   );
 };

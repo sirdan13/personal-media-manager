@@ -1,4 +1,5 @@
-from typing import List
+from typing import List, Optional
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -71,4 +72,29 @@ def get_scan_status(
     db: Session = Depends(get_db)
 ):
     job = get_scan_job(db, current_user.id, scan_id)
+    return ScanJobOut.model_validate(job)
+
+class ServerScanRequest(BaseModel):
+    backfill_thumbnails_only: bool = False
+
+@router.post("/{source_id}/server-scan", response_model=ScanJobOut, status_code=status.HTTP_201_CREATED)
+def trigger_server_scan(
+    source_id: str,
+    payload: Optional[ServerScanRequest] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    from app.services.local_scanner_service import start_server_scan
+    backfill = payload.backfill_thumbnails_only if payload else False
+    job = start_server_scan(db, current_user.id, source_id, backfill_thumbnails_only=backfill)
+    return ScanJobOut.model_validate(job)
+
+@router.post("/{scan_id}/cancel", response_model=ScanJobOut)
+def cancel_scan(
+    scan_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    from app.services.local_scanner_service import cancel_server_scan
+    job = cancel_server_scan(db, current_user.id, scan_id)
     return ScanJobOut.model_validate(job)

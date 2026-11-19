@@ -19,6 +19,7 @@ class FileOut(BaseModel):
     duration_seconds: Optional[float] = None
     sha256: str
     availability_status: str
+    metadata_json: Optional[str] = None
     first_indexed_at: datetime
     last_seen_at: datetime
 
@@ -34,6 +35,8 @@ class MediaOut(BaseModel):
     height: Optional[int] = None
     duration_seconds: Optional[float] = None
     copies_count: int = 1
+    distinct_sources_count: int = 1
+    protection_status: str = "unprotected"  # "unprotected" | "protected" | "intra_source_duplicate"
     has_thumbnail: bool = False
     is_live_photo: bool = False
     live_video_media_id: Optional[str] = None
@@ -74,12 +77,17 @@ class MapMediaOut(BaseModel):
     captured_at: Optional[datetime] = None
     has_thumbnail: bool = False
     media_type: str = "image"
+    place_name: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
 
 class DuplicateGroupOut(BaseModel):
     media_id: str
     canonical_sha256: str
     copies_count: int
+    distinct_sources_count: int = 1
+    redundancy_type: str = "intra_source_duplicate"  # "healthy_multi_source" | "intra_source_duplicate" | "mixed"
+    intra_source_wasted_bytes: int = 0
+    multi_source_backup_bytes: int = 0
     total_size_bytes: int
     media_type: str
     has_thumbnail: bool = False

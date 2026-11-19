@@ -1,14 +1,21 @@
 import os
 import io
+import sqlite3
+import tempfile
+from datetime import datetime
 from PIL import Image, ImageOps
 from pydantic import BaseModel, field_validator
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from app.core.database import get_db
+from app.core.database import get_db, engine
 from app.core.config import settings
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_current_user_from_header_or_query
 from app.models.entities import User, Media, Thumbnail
+from app.services.geo_service import backfill_all_media_places
+from app.services.scan_service import recover_stale_scans
 
 router = APIRouter(prefix="/settings", tags=["Impostazioni Sistema"])
 
@@ -135,3 +142,75 @@ def compact_user_thumbnails(
         "saved_bytes": saved_bytes,
         "profile_applied": profile_name
     }
+
+@router.get("/backup/db")
+def backup_database(
+    current_user: User = Depends(get_current_user_from_header_or_query)
+):
+    if not settings.DATABASE_URL.startswith("sqlite:///"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Il backup consistente WAL è supportato solo per database SQLite locale"
+        )
+
+    db_path = settings.DATABASE_URL.replace("sqlite:///", "")
+    fd, tmp_path = tempfile.mkstemp(prefix="pmm_backup_", suffix=".db")
+    os.close(fd)
+
+    try:
+        if db_path != ":memory:" and os.path.isfile(db_path):
+            src_conn = sqlite3.connect(db_path)
+            dst_conn = sqlite3.connect(tmp_path)
+            try:
+                src_conn.backup(dst_conn)
+            finally:
+                src_conn.close()
+                dst_conn.close()
+        else:
+            raw_conn = engine.raw_connection()
+            dst_conn = sqlite3.connect(tmp_path)
+            try:
+                driver_conn = getattr(raw_conn, "driver_connection", raw_conn)
+                if hasattr(driver_conn, "backup"):
+                    driver_conn.backup(dst_conn)
+                elif hasattr(raw_conn, "connection") and hasattr(raw_conn.connection, "backup"):
+                    raw_conn.connection.backup(dst_conn)
+                else:
+                    raise RuntimeError("Connessione SQLite nativa non disponibile per il backup in memoria")
+            finally:
+                dst_conn.close()
+                raw_conn.close()
+    except Exception as e:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Errore durante la creazione del backup consistente del database: {e}"
+        )
+
+    date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return FileResponse(
+        path=tmp_path,
+        filename=f"pmm_backup_{date_str}.db",
+        media_type="application/x-sqlite3",
+        background=BackgroundTask(os.remove, tmp_path)
+    )
+
+@router.post("/maintenance/geotag-backfill")
+def maintenance_geotag_backfill(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    updated_count = backfill_all_media_places(db)
+    return {"updated_count": updated_count}
+
+@router.post("/maintenance/cleanup-stale-scans")
+def maintenance_cleanup_stale_scans(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    recovered_count = recover_stale_scans(db)
+    return {"recovered_count": recovered_count}

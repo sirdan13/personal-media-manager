@@ -1,9 +1,13 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { ApiClient } from '../../services/api';
+import { useToast } from '../../context/ToastContext';
 import {
   FolderOpen,
   Square,
-  Cpu
+  Cpu,
+  Server,
+  Play,
+  RefreshCw
 } from 'lucide-react';
 import {
   detectBrowserCapabilities,
@@ -20,6 +24,7 @@ interface ScansViewProps {
 }
 
 export const ScansView: React.FC<ScansViewProps> = ({ selectedSourceForScan, onScanCompleted }) => {
+  const { toast } = useToast();
   const [scans, setScans] = useState<any[]>([]);
   const [sources, setSources] = useState<any[]>([]);
   const [selectedSourceId, setSelectedSourceId] = useState<string>(selectedSourceForScan?.id || '');
@@ -28,16 +33,38 @@ export const ScansView: React.FC<ScansViewProps> = ({ selectedSourceForScan, onS
   // Scanning live state
   const [isScanning, setIsScanning] = useState(false);
   const [progress, setProgress] = useState<ScanProgress | null>(null);
+  const [activeServerScanJob, setActiveServerScanJob] = useState<any | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const engineRef = useRef<ScannerEngine | null>(null);
   const activeScanJobRef = useRef<any | null>(null);
+  const wasAbortedRef = useRef<boolean>(false);
 
   useEffect(() => {
     setCapabilities(detectBrowserCapabilities());
     loadHistory();
     loadSources();
   }, []);
+
+  // Poll active server scan job if running
+  useEffect(() => {
+    if (!activeServerScanJob) return;
+    const interval = setInterval(async () => {
+      try {
+        const job = await ApiClient.getScanStatus(activeServerScanJob.id);
+        if (job.status !== 'running') {
+          setActiveServerScanJob(null);
+          await loadHistory();
+          if (onScanCompleted) onScanCompleted();
+        } else {
+          setActiveServerScanJob(job);
+        }
+      } catch (err) {
+        console.warn('Error polling server scan status:', err);
+      }
+    }, 1500);
+    return () => clearInterval(interval);
+  }, [activeServerScanJob]);
 
   useEffect(() => {
     if (selectedSourceForScan) {
@@ -50,8 +77,36 @@ export const ScansView: React.FC<ScansViewProps> = ({ selectedSourceForScan, onS
     try {
       const data = await ApiClient.getScans();
       setScans(data);
+      const running = data.find((j: any) => j.status === 'running');
+      if (running) {
+        setActiveServerScanJob(running);
+      }
     } catch (err) {
       console.error('Error loading scans:', err);
+    }
+  };
+
+  const handleStartServerScan = async (backfillOnly = false) => {
+    if (!selectedSourceId) return;
+    try {
+      const job = await ApiClient.startServerScan(selectedSourceId, backfillOnly);
+      setActiveServerScanJob(job);
+      toast.success(backfillOnly ? 'Rigenerazione miniature avviata in background!' : 'Scansione completa avviata dal server!');
+      await loadHistory();
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
+  };
+
+  const handleCancelServerScan = async () => {
+    if (!activeServerScanJob) return;
+    try {
+      await ApiClient.cancelScan(activeServerScanJob.id);
+      setActiveServerScanJob(null);
+      toast.info('Richiesta annullamento inviata al server.');
+      await loadHistory();
+    } catch (err) {
+      toast.error((err as Error).message);
     }
   };
 
@@ -70,12 +125,13 @@ export const ScansView: React.FC<ScansViewProps> = ({ selectedSourceForScan, onS
 
   const startScanWorkflow = async (filesGenerator: any) => {
     if (!selectedSourceId) {
-      alert('Seleziona prima una fonte a cui associare la scansione.');
+      toast.error('Seleziona prima una fonte a cui associare la scansione.');
       return;
     }
 
     try {
       setIsScanning(true);
+      wasAbortedRef.current = false;
 
       // 1. Fetch fingerprints for incremental scan optimization
       const fingerprints = await ApiClient.getSourceFingerprints(selectedSourceId).catch(() => ({}));
@@ -88,20 +144,29 @@ export const ScansView: React.FC<ScansViewProps> = ({ selectedSourceForScan, onS
       // 3. Setup batch buffer and engine
       let buffer: any[] = [];
       const BATCH_SIZE = 25; // Flush to backend every 25 files
+      let batchChain = Promise.resolve();
 
-      const flushBatch = async () => {
+      const queueBatch = () => {
         if (buffer.length === 0 || !activeScanJobRef.current) return;
         const toSend = [...buffer];
         buffer = [];
-        try {
-          await ApiClient.sendBatch(
-            activeScanJobRef.current.id,
-            toSend,
-            toSend[toSend.length - 1].relative_path
-          );
-        } catch (err) {
-          console.error('Batch upload error:', err);
-        }
+        batchChain = batchChain.then(async () => {
+          if (!activeScanJobRef.current) return;
+          try {
+            await ApiClient.sendBatch(
+              activeScanJobRef.current.id,
+              toSend,
+              toSend[toSend.length - 1].relative_path
+            );
+          } catch (err) {
+            console.error('Batch upload error:', err);
+          }
+        });
+      };
+
+      const flushBatch = async () => {
+        queueBatch();
+        await batchChain;
       };
 
       const engine = new ScannerEngine({
@@ -121,7 +186,7 @@ export const ScansView: React.FC<ScansViewProps> = ({ selectedSourceForScan, onS
             size_bytes: file.size,
             sha256: file.sha256,
             captured_at: file.capturedAt,
-            modified_at: file.modifiedAt,
+            filesystem_modified_at: file.modifiedAt,
             width: file.width,
             height: file.height,
             duration_seconds: file.duration,
@@ -130,7 +195,7 @@ export const ScansView: React.FC<ScansViewProps> = ({ selectedSourceForScan, onS
           });
 
           if (buffer.length >= BATCH_SIZE) {
-            flushBatch();
+            queueBatch();
           }
         },
         onError: (err) => {
@@ -144,23 +209,33 @@ export const ScansView: React.FC<ScansViewProps> = ({ selectedSourceForScan, onS
       // Final batch flush
       await flushBatch();
 
-      // Reconcile missing/restored files for this source against currently seen paths
-      try {
-        await ApiClient.reconcileSource(selectedSourceId, seenPaths);
-      } catch (recErr) {
-        console.warn('Reconciliation error:', recErr);
-      }
+      if (!wasAbortedRef.current) {
+        // Reconcile missing/restored files for this source against currently seen paths
+        try {
+          await ApiClient.reconcileSource(selectedSourceId, seenPaths);
+        } catch (recErr) {
+          console.warn('Reconciliation error:', recErr);
+        }
 
-      // Complete scan job on backend
-      await ApiClient.completeScan(
-        job.id,
-        result.files.length,
-        result.errors.length
-      );
+        // Complete scan job on backend
+        await ApiClient.completeScan(
+          job.id,
+          result.files.length,
+          result.errors.length
+        );
 
-      await loadHistory();
-      if (onScanCompleted) {
-        onScanCompleted();
+        await loadHistory();
+        if (onScanCompleted) {
+          onScanCompleted();
+        }
+      } else {
+        await ApiClient.completeScan(
+          job.id,
+          result.files.length,
+          result.errors.length,
+          'Scansione interrotta dall\'utente'
+        );
+        await loadHistory();
       }
     } catch (err) {
       console.error('Scan failed:', err);
@@ -187,8 +262,143 @@ export const ScansView: React.FC<ScansViewProps> = ({ selectedSourceForScan, onS
     }
   };
 
+  const selectedSource = sources.find((s) => s.id === selectedSourceId);
+  const hasLocalRoot = Boolean(selectedSource && selectedSource.root_path && selectedSource.status !== 'offline');
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {/* Active Server Scan Live Progress Banner */}
+      {activeServerScanJob && (
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(2, 132, 199, 0.15) 0%, #1e293b 100%)',
+          border: '1px solid #0284c7',
+          borderRadius: '16px',
+          padding: '20px 24px'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Server size={20} color="#38bdf8" />
+              <div>
+                <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#f8fafc' }}>
+                  Scansione Server in Background in Corso...
+                </h3>
+                <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>
+                  Fonte: <strong>{activeServerScanJob.source_name || selectedSource?.name || 'Fonte'}</strong>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={handleCancelServerScan}
+              style={{
+                background: '#f43f5e',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '8px 14px',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <Square size={13} /> Ferma Scansione Server
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '8px' }}>
+            <span>
+              Progresso: <strong style={{ color: '#38bdf8' }}>{activeServerScanJob.processed_files}</strong> di <strong>{activeServerScanJob.total_files_discovered || '...'}</strong> file
+            </span>
+            {activeServerScanJob.last_checkpoint_path && (
+              <span style={{ color: '#94a3b8', fontSize: '12px', maxWidth: '350px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                Ultimo: {activeServerScanJob.last_checkpoint_path}
+              </span>
+            )}
+          </div>
+
+          <div style={{ height: '8px', background: '#0f172a', borderRadius: '4px', overflow: 'hidden' }}>
+            <div style={{
+              height: '100%',
+              width: `${activeServerScanJob.total_files_discovered > 0 ? Math.min(100, (activeServerScanJob.processed_files / activeServerScanJob.total_files_discovered) * 100) : 10}%`,
+              background: '#0284c7',
+              transition: 'width 0.3s ease-out'
+            }} />
+          </div>
+        </div>
+      )}
+
+      {/* Native Server Scan Action Card */}
+      {hasLocalRoot && (
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.08) 0%, #1e293b 100%)',
+          border: '1px solid rgba(34, 197, 94, 0.4)',
+          borderRadius: '16px',
+          padding: '20px 24px'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Server size={18} color="#22c55e" />
+                <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#f8fafc' }}>
+                  Scansione Nativa dal Server (Consigliata · Background · Supporto RAW/Video)
+                </h3>
+              </div>
+              <p style={{ color: '#94a3b8', fontSize: '12px', marginTop: '4px' }}>
+                Questa fonte è accessibile localmente sul server in: <code style={{ color: '#38bdf8' }}>{selectedSource?.root_path}</code>.
+                Puoi lanciare la scansione in background indipendente dal browser con estrazione EXIF avanzata e frame video.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => handleStartServerScan(false)}
+                disabled={Boolean(activeServerScanJob)}
+                style={{
+                  background: '#22c55e',
+                  color: 'black',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '9px 16px',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: activeServerScanJob ? 'not-allowed' : 'pointer',
+                  opacity: activeServerScanJob ? 0.6 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <Play size={14} fill="black" /> Avvia Scansione Completa dal Server
+              </button>
+
+              <button
+                onClick={() => handleStartServerScan(true)}
+                disabled={Boolean(activeServerScanJob)}
+                style={{
+                  background: '#0f172a',
+                  color: '#cbd5e1',
+                  border: '1px solid #334155',
+                  borderRadius: '8px',
+                  padding: '9px 16px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: activeServerScanJob ? 'not-allowed' : 'pointer',
+                  opacity: activeServerScanJob ? 0.6 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <RefreshCw size={13} color="#38bdf8" /> Rigenera Solo Miniature Mancanti (Veloce)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Scanner Control Center */}
       <div style={{
         background: '#1e293b',
@@ -318,7 +528,10 @@ export const ScansView: React.FC<ScansViewProps> = ({ selectedSourceForScan, onS
 
             {isScanning && (
               <button
-                onClick={() => engineRef.current?.abort()}
+                onClick={() => {
+                  wasAbortedRef.current = true;
+                  engineRef.current?.abort();
+                }}
                 style={{
                   background: '#f43f5e',
                   color: 'white',
