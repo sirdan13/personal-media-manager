@@ -70,17 +70,28 @@ export class ApiClient {
     return this.request<any[]>('/sources');
   }
 
-  public static async createSource(name: string, sourceType = 'browser_folder', rootPath?: string, role = 'primary') {
+  public static async createSource(name: string, sourceType = 'browser_folder', rootPath?: string, role = 'primary', excludedPaths?: string) {
     return this.request<any>('/sources', {
       method: 'POST',
-      body: JSON.stringify({ name, source_type: sourceType, root_path: rootPath, role })
+      body: JSON.stringify({ name, source_type: sourceType, root_path: rootPath, role, excluded_paths: excludedPaths })
     });
   }
 
-  public static async updateSource(sourceId: string, payload: { name?: string; status?: string; root_path?: string; role?: string }) {
+  public static async updateSource(sourceId: string, payload: { name?: string; status?: string; root_path?: string; role?: string; excluded_paths?: string }) {
     return this.request<any>(`/sources/${sourceId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload)
+    });
+  }
+
+  public static async getSourceFolders(sourceId: string) {
+    return this.request<{ folder: string; file_count: number }[]>(`/sources/${sourceId}/folders`);
+  }
+
+  public static async setSourceExclusions(sourceId: string, excludedPaths: string, purgeExisting = true) {
+    return this.request<{ source_id: string; excluded_paths: string; purged_files: number; purged_media: number }>(`/sources/${sourceId}/exclusions`, {
+      method: 'POST',
+      body: JSON.stringify({ excluded_paths: excludedPaths, purge_existing: purgeExisting })
     });
   }
 

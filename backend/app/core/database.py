@@ -67,8 +67,11 @@ def run_db_migrations(target_engine):
         try:
             res = conn.execute(text("PRAGMA table_info(sources)"))
             cols = [row[1] for row in res.fetchall()]
-            if cols and "role" not in cols:
-                conn.execute(text("ALTER TABLE sources ADD COLUMN role VARCHAR(30) NOT NULL DEFAULT 'primary'"))
+            if cols:
+                if "role" not in cols:
+                    conn.execute(text("ALTER TABLE sources ADD COLUMN role VARCHAR(30) NOT NULL DEFAULT 'primary'"))
+                if "excluded_paths" not in cols:
+                    conn.execute(text("ALTER TABLE sources ADD COLUMN excluded_paths TEXT"))
                 conn.commit()
         except Exception as e:
             print("Migration warning (sources):", e)

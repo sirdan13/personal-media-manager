@@ -59,6 +59,7 @@ class Source(Base):
     source_type = Column(String(50), nullable=False, default="browser_folder")
     role = Column(String(30), nullable=False, default="primary")
     root_path = Column(Text, nullable=True)
+    excluded_paths = Column(Text, nullable=True)
     persistent_identifier = Column(String(255), nullable=True)
     status = Column(String(30), nullable=False, default="online")
     created_at = Column(DateTime, default=utc_now, nullable=False)

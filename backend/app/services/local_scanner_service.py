@@ -11,7 +11,12 @@ from fastapi import HTTPException, status
 from app.core.database import SessionLocal
 from app.models.entities import ScanJob, Source
 from app.schemas.scan import ScanBatchItem, ScanBatchRequest
-from app.services.source_service import get_source_by_id, get_source_file_fingerprints, reconcile_source_files
+from app.services.source_service import (
+    get_source_by_id,
+    get_source_file_fingerprints,
+    reconcile_source_files,
+    is_path_excluded
+)
 from app.services.scan_service import start_scan_job, complete_scan_job, get_scan_job
 from app.services.ingestion_service import process_scan_batch
 from app.services.media_preview_service import (
@@ -113,14 +118,31 @@ def _run_server_scan_worker(
         if not job:
             return
 
+        source = get_source_by_id(db, user_id, source_id)
         fingerprints = get_source_file_fingerprints(db, user_id, source_id)
+
+        # Parse excluded patterns from source
+        excluded_patterns = [
+            p.strip() for p in (source.excluded_paths or "").split(",") if p.strip()
+        ]
 
         # 1. Discover files
         discovered: List[str] = []
         for dirpath, dirnames, filenames in os.walk(root_path):
             if cancel_event.is_set():
                 break
-            dirnames[:] = [d for d in dirnames if not d.startswith(".") and d.lower() not in IGNORED_DIR_NAMES]
+
+            rel_dir = os.path.relpath(dirpath, root_path).replace("\\", "/")
+            if rel_dir == ".":
+                rel_dir = ""
+
+            # Filter out ignored/hidden directories AND user-excluded directories
+            dirnames[:] = [
+                d for d in dirnames
+                if not d.startswith(".")
+                and d.lower() not in IGNORED_DIR_NAMES
+                and not is_path_excluded(f"{rel_dir}/{d}" if rel_dir else d, excluded_patterns)
+            ]
 
             for fname in filenames:
                 if fname.startswith("."):
@@ -129,6 +151,9 @@ def _run_server_scan_worker(
                 if ext in IGNORED_EXTENSIONS:
                     continue
                 if ext in IMAGE_EXTENSIONS or ext in VIDEO_EXTENSIONS:
+                    rel_file = f"{rel_dir}/{fname}" if rel_dir else fname
+                    if is_path_excluded(rel_file, excluded_patterns):
+                        continue
                     discovered.append(os.path.join(dirpath, fname))
 
         if cancel_event.is_set():
@@ -162,6 +187,11 @@ def _run_server_scan_worker(
                 )
 
                 fp = fingerprints.get(rel_path)
+
+                # Skip completely if unchanged and thumbnail already exists (Instant Incremental)
+                if not backfill_thumbnails_only and fp and fp.get("size_bytes") == size_bytes and fp.get("has_thumbnail"):
+                    processed_total += 1
+                    continue
 
                 if backfill_thumbnails_only and fp and fp.get("has_thumbnail"):
                     processed_total += 1

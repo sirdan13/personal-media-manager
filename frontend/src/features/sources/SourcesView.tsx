@@ -9,6 +9,7 @@ import {
   Trash2,
   FolderSearch,
   Folder,
+  FolderX,
   ChevronRight,
   ArrowLeft,
   Info,
@@ -31,7 +32,16 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
   const [sourceType, setSourceType] = useState('browser_folder');
   const [rootPath, setRootPath] = useState('');
   const [role, setRole] = useState<'primary' | 'backup' | 'archive'>('primary');
+  const [createExcludedPaths, setCreateExcludedPaths] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // Exclusions management modal state
+  const [exclusionsModalSource, setExclusionsModalSource] = useState<any | null>(null);
+  const [sourceFolders, setSourceFolders] = useState<{ folder: string; file_count: number }[]>([]);
+  const [loadingFolders, setLoadingFolders] = useState(false);
+  const [editExclusionsText, setEditExclusionsText] = useState('');
+  const [purgeExisting, setPurgeExisting] = useState(true);
+  const [savingExclusions, setSavingExclusions] = useState(false);
 
   // Filesystem explorer & guide state
   const [showExplorer, setShowExplorer] = useState(false);
@@ -66,6 +76,7 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
     setRootPath('');
     setRole('primary');
     setSourceType('browser_folder');
+    setCreateExcludedPaths('');
     setShowExplorer(false);
     setShowGuide(false);
     setFsError(null);
@@ -151,16 +162,77 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
     if (!name.trim()) return;
     setSaving(true);
     try {
-      await ApiClient.createSource(name.trim(), sourceType, rootPath.trim() || undefined, role);
+      await ApiClient.createSource(
+        name.trim(),
+        sourceType,
+        rootPath.trim() || undefined,
+        role,
+        createExcludedPaths.trim() || undefined
+      );
       setIsModalOpen(false);
       setName('');
       setRootPath('');
+      setCreateExcludedPaths('');
       setRole('primary');
+      toast.success('Fonte registrata con successo!');
       await loadSources();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error creating source:', err);
+      toast.error(err?.message || 'Errore nella creazione della fonte');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleOpenExclusionsModal = async (source: any) => {
+    setExclusionsModalSource(source);
+    setEditExclusionsText(source.excluded_paths || '');
+    setPurgeExisting(true);
+    setLoadingFolders(true);
+    try {
+      const folders = await ApiClient.getSourceFolders(source.id);
+      setSourceFolders(folders);
+    } catch (err) {
+      console.error('Error loading source folders:', err);
+      setSourceFolders([]);
+    } finally {
+      setLoadingFolders(false);
+    }
+  };
+
+  const handleAddFolderToExclusions = (folderName: string) => {
+    const current = editExclusionsText
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (!current.includes(folderName)) {
+      current.push(folderName);
+      setEditExclusionsText(current.join(', '));
+    }
+  };
+
+  const handleSaveExclusions = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!exclusionsModalSource) return;
+    setSavingExclusions(true);
+    try {
+      const res = await ApiClient.setSourceExclusions(
+        exclusionsModalSource.id,
+        editExclusionsText.trim(),
+        purgeExisting
+      );
+      if (res.purged_files > 0) {
+        toast.success(`Esclusioni applicate! Rimossi ${res.purged_files} file e ripulite ${res.purged_media} foto dal catalogo.`);
+      } else {
+        toast.success('Regole di esclusione salvate per le future scansioni!');
+      }
+      setExclusionsModalSource(null);
+      await loadSources();
+    } catch (err: any) {
+      console.error('Error saving exclusions:', err);
+      toast.error(err?.message || 'Errore nel salvataggio delle esclusioni');
+    } finally {
+      setSavingExclusions(false);
     }
   };
 
@@ -298,14 +370,33 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
                     <strong>Ultima scansione:</strong>{' '}
                     {s.last_scanned_at ? new Date(s.last_scanned_at).toLocaleString() : 'Mai scansionata'}
                   </div>
+                  {s.excluded_paths && (
+                    <div style={{
+                      marginTop: '6px',
+                      fontSize: '11px',
+                      color: '#f59e0b',
+                      background: 'rgba(245, 158, 11, 0.08)',
+                      border: '1px solid rgba(245, 158, 11, 0.25)',
+                      borderRadius: '6px',
+                      padding: '4px 8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}>
+                      <FolderX size={13} style={{ flexShrink: 0 }} />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <strong>Esclusioni:</strong> {s.excluded_paths}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
                 <button
                   onClick={() => handleToggleStatus(s.id)}
                   style={{
-                    flex: 1,
+                    flex: '1 1 80px',
                     background: s.status === 'online' ? '#334155' : 'rgba(34, 197, 94, 0.15)',
                     color: s.status === 'online' ? '#94a3b8' : '#22c55e',
                     border: '1px solid #475569',
@@ -318,12 +409,35 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
                   {s.status === 'online' ? 'Scollega' : 'Ricollega'}
                 </button>
 
+                <button
+                  onClick={() => handleOpenExclusionsModal(s)}
+                  title="Gestisci cartelle ed esclusioni dal catalogo"
+                  style={{
+                    flex: '1 1 90px',
+                    padding: '8px 10px',
+                    background: s.excluded_paths ? 'rgba(245, 158, 11, 0.15)' : '#334155',
+                    color: s.excluded_paths ? '#f59e0b' : '#94a3b8',
+                    border: `1px solid ${s.excluded_paths ? 'rgba(245, 158, 11, 0.4)' : '#475569'}`,
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '5px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <FolderX size={13} />
+                  Esclusioni
+                </button>
+
                 {s.root_path && s.status !== 'offline' && (
                   <button
                     onClick={() => onStartScanForSource(s)}
                     title="Scansione nativa sul server (RAW, HEIC, Video)"
                     style={{
-                      flex: 1,
+                      flex: '1 1 80px',
                       background: 'rgba(34, 197, 94, 0.15)',
                       color: '#22c55e',
                       border: '1px solid rgba(34, 197, 94, 0.4)',
@@ -345,7 +459,7 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
                 <button
                   onClick={() => onStartScanForSource(s)}
                   style={{
-                    flex: 1,
+                    flex: '1 1 80px',
                     background: '#0284c7',
                     color: 'white',
                     border: 'none',
@@ -901,6 +1015,30 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
                 )}
               </div>
 
+              <div>
+                <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>
+                  Cartelle o Pattern da Escludere (Opzionale)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Es. Musica, CD Covers, VirtualMachines, *cover*"
+                  value={createExcludedPaths}
+                  onChange={(e) => setCreateExcludedPaths(e.target.value)}
+                  style={{
+                    width: '100%',
+                    background: '#0f172a',
+                    border: '1px solid #334155',
+                    borderRadius: '8px',
+                    padding: '10px 12px',
+                    color: 'white',
+                    fontSize: '13px'
+                  }}
+                />
+                <span style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                  Separa con virgola i nomi delle cartelle che il server deve ignorare a monte durante la scansione.
+                </span>
+              </div>
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
                 <button
                   type="button"
@@ -932,6 +1070,192 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
                   }}
                 >
                   {saving ? 'Salvataggio...' : 'Crea Fonte'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Gestione Esclusioni & Pulizia Retroattiva */}
+      {exclusionsModalSource && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.85)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: '#1e293b',
+            border: '1px solid #334155',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '520px',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            padding: '24px',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FolderX size={20} color="#f59e0b" />
+                <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>
+                  Esclusioni — {exclusionsModalSource.name}
+                </h3>
+              </div>
+              <button
+                onClick={() => setExclusionsModalSource(null)}
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveExclusions} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>
+                  Cartelle e Pattern da Escludere
+                </label>
+                <input
+                  type="text"
+                  placeholder="Es. Musica, CD Covers, VirtualMachines, *cover*"
+                  value={editExclusionsText}
+                  onChange={(e) => setEditExclusionsText(e.target.value)}
+                  style={{
+                    width: '100%',
+                    background: '#0f172a',
+                    border: '1px solid #334155',
+                    borderRadius: '8px',
+                    padding: '10px 12px',
+                    color: 'white',
+                    fontSize: '13px'
+                  }}
+                />
+                <span style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                  Separa i percorsi con la virgola. Saranno ignorati nelle prossime scansioni.
+                </span>
+              </div>
+
+              {/* Cartelle scansionate in questo archivio */}
+              <div>
+                <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '8px' }}>
+                  Cartelle Rilevate in Questa Fonte (tocca per escludere):
+                </label>
+                {loadingFolders ? (
+                  <div style={{ fontSize: '12px', color: '#94a3b8', padding: '12px', textAlign: 'center' }}>
+                    Caricamento cartelle in corso...
+                  </div>
+                ) : sourceFolders.length > 0 ? (
+                  <div style={{
+                    maxHeight: '160px',
+                    overflowY: 'auto',
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '6px',
+                    background: '#0f172a',
+                    border: '1px solid #334155',
+                    borderRadius: '8px',
+                    padding: '10px'
+                  }}>
+                    {sourceFolders.map((sf) => (
+                      <button
+                        key={sf.folder}
+                        type="button"
+                        onClick={() => handleAddFolderToExclusions(sf.folder)}
+                        style={{
+                          background: editExclusionsText.toLowerCase().includes(sf.folder.toLowerCase()) ? 'rgba(239, 68, 68, 0.15)' : '#1e293b',
+                          border: `1px solid ${editExclusionsText.toLowerCase().includes(sf.folder.toLowerCase()) ? 'rgba(239, 68, 68, 0.4)' : '#475569'}`,
+                          color: editExclusionsText.toLowerCase().includes(sf.folder.toLowerCase()) ? '#f87171' : 'white',
+                          borderRadius: '6px',
+                          padding: '4px 8px',
+                          fontSize: '11px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <Folder size={12} color="#38bdf8" />
+                        <strong>{sf.folder}</strong>
+                        <span style={{ color: '#94a3b8', fontSize: '10px' }}>({sf.file_count})</span>
+                        <span style={{ color: '#f59e0b', fontSize: '11px', fontWeight: 'bold' }}>+</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
+                    Nessuna sottocartella indicizzata trovata.
+                  </div>
+                )}
+              </div>
+
+              {/* Opzione Purge retroattivo */}
+              <div style={{
+                background: 'rgba(245, 158, 11, 0.08)',
+                border: '1px solid rgba(245, 158, 11, 0.25)',
+                borderRadius: '8px',
+                padding: '12px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px'
+              }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 600, color: '#f59e0b' }}>
+                  <input
+                    type="checkbox"
+                    checked={purgeExisting}
+                    onChange={(e) => setPurgeExisting(e.target.checked)}
+                    style={{ cursor: 'pointer' }}
+                  />
+                  Applica Retroattivamente (Pulisci Catalogo Ora)
+                </label>
+                <p style={{ margin: 0, fontSize: '11px', color: '#cbd5e1', lineHeight: '1.5' }}>
+                  Se selezionato, tutti i file già presenti nel database che corrispondono a queste esclusioni verranno <strong>rimossi dal catalogo dell'app</strong> e le loro miniature liberate.<br />
+                  <span style={{ color: '#38bdf8' }}>✓ 100% Read-Only: I file originali sul disco NON verranno toccati né cancellati.</span>
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => setExclusionsModalSource(null)}
+                  style={{
+                    background: '#334155',
+                    color: '#94a3b8',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '10px 16px',
+                    fontSize: '13px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Annulla
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingExclusions}
+                  style={{
+                    background: '#f59e0b',
+                    color: 'black',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '10px 18px',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    cursor: savingExclusions ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  {savingExclusions ? 'Applicazione in corso...' : 'Salva ed Applica Esclusioni'}
                 </button>
               </div>
             </form>

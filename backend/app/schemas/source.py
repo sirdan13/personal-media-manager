@@ -7,6 +7,7 @@ class SourceCreate(BaseModel):
     source_type: str = "browser_folder"
     role: Optional[str] = "primary"
     root_path: Optional[str] = None
+    excluded_paths: Optional[str] = None
     persistent_identifier: Optional[str] = None
 
 class SourceUpdate(BaseModel):
@@ -14,6 +15,7 @@ class SourceUpdate(BaseModel):
     status: Optional[str] = None
     role: Optional[str] = None
     root_path: Optional[str] = None
+    excluded_paths: Optional[str] = None
 
 class SourceOut(BaseModel):
     id: str
@@ -23,6 +25,7 @@ class SourceOut(BaseModel):
     source_type: str
     role: str = "primary"
     root_path: Optional[str] = None
+    excluded_paths: Optional[str] = None
     persistent_identifier: Optional[str] = None
     status: str
     created_at: datetime

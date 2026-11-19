@@ -1,5 +1,6 @@
 import os
 import platform
+import fnmatch
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -38,6 +39,7 @@ def get_user_sources(db: Session, user_id: str) -> List[SourceOut]:
             source_type=s.source_type,
             role=getattr(s, "role", "primary") or "primary",
             root_path=s.root_path,
+            excluded_paths=getattr(s, "excluded_paths", None),
             persistent_identifier=s.persistent_identifier,
             status=computed_status,
             created_at=s.created_at,
@@ -63,6 +65,7 @@ def create_source(db: Session, user_id: str, source_in: SourceCreate) -> Source:
         source_type=source_in.source_type,
         role=source_in.role or "primary",
         root_path=source_in.root_path,
+        excluded_paths=source_in.excluded_paths,
         persistent_identifier=source_in.persistent_identifier,
         status="online"
     )
@@ -81,6 +84,8 @@ def update_source(db: Session, user_id: str, source_id: str, source_in: SourceUp
         source.role = source_in.role
     if source_in.root_path is not None:
         source.root_path = source_in.root_path
+    if source_in.excluded_paths is not None:
+        source.excluded_paths = source_in.excluded_paths
     
     db.commit()
     db.refresh(source)
@@ -170,6 +175,112 @@ def reconcile_source_files(db: Session, user_id: str, source_id: str, seen_paths
         "marked_missing": marked_missing,
         "restored_available": restored_available,
         "total_active": total_active
+    }
+
+def is_path_excluded(rel_path: str, excluded_patterns: List[str]) -> bool:
+    if not rel_path or not excluded_patterns:
+        return False
+    rel_clean = rel_path.replace("\\", "/").strip("/").lower()
+    parts = rel_clean.split("/")
+    filename = os.path.basename(rel_clean)
+
+    for pat in excluded_patterns:
+        pat_clean = pat.replace("\\", "/").strip("/").lower()
+        if not pat_clean:
+            continue
+        # 1. Match folder component anywhere in tree (e.g. 'Musica' matches 'Musica/...' or 'A/Musica/B')
+        if pat_clean in parts:
+            return True
+        # 2. Match exact path or subpath prefix
+        if rel_clean == pat_clean or rel_clean.startswith(pat_clean + "/"):
+            return True
+        # 3. Wildcard pattern matching (e.g. *cover*, *.iso)
+        if fnmatch.fnmatch(rel_clean, pat_clean) or fnmatch.fnmatch(filename, pat_clean):
+            return True
+    return False
+
+def get_source_folders(db: Session, user_id: str, source_id: str) -> List[Dict[str, Any]]:
+    get_source_by_id(db, user_id, source_id)
+    files = db.query(File.relative_path).filter(File.source_id == source_id).all()
+    
+    folder_counts: Dict[str, int] = {}
+    for (rel_path,) in files:
+        if not rel_path:
+            continue
+        parts = rel_path.replace("\\", "/").strip("/").split("/")
+        if len(parts) > 1:
+            top_folder = parts[0]
+            folder_counts[top_folder] = folder_counts.get(top_folder, 0) + 1
+            if len(parts) > 2:
+                second_folder = f"{parts[0]}/{parts[1]}"
+                folder_counts[second_folder] = folder_counts.get(second_folder, 0) + 1
+        else:
+            folder_counts["(Radice)"] = folder_counts.get("(Radice)", 0) + 1
+
+    result = [
+        {"folder": folder, "file_count": count}
+        for folder, count in sorted(folder_counts.items(), key=lambda x: -x[1])
+    ]
+    return result
+
+def exclude_and_purge_paths(
+    db: Session,
+    user_id: str,
+    source_id: str,
+    excluded_paths_str: str,
+    purge_existing: bool = True
+) -> Dict[str, Any]:
+    source = get_source_by_id(db, user_id, source_id)
+    
+    # Clean and split patterns
+    patterns = [p.strip() for p in (excluded_paths_str or "").split(",") if p.strip()]
+    cleaned_excluded_str = ", ".join(patterns) if patterns else None
+    source.excluded_paths = cleaned_excluded_str
+
+    purged_files_count = 0
+    purged_media_count = 0
+
+    if purge_existing and patterns:
+        all_files = db.query(File).filter(File.source_id == source_id).all()
+        files_to_delete = []
+        affected_media_ids = set()
+
+        for f in all_files:
+            if is_path_excluded(f.relative_path, patterns):
+                files_to_delete.append(f)
+                affected_media_ids.add(f.media_id)
+
+        purged_files_count = len(files_to_delete)
+
+        for f in files_to_delete:
+            db.delete(f)
+        
+        db.flush()
+
+        # Check for orphan Media records
+        for m_id in affected_media_ids:
+            remaining = db.query(File).filter(File.media_id == m_id).count()
+            if remaining == 0:
+                thumbs = db.query(Thumbnail).filter(Thumbnail.media_id == m_id).all()
+                for t in thumbs:
+                    if t.storage_path:
+                        disk_path = os.path.join(settings.THUMBNAILS_DIR, t.storage_path)
+                        if os.path.exists(disk_path):
+                            try:
+                                os.remove(disk_path)
+                            except Exception:
+                                pass
+                    db.delete(t)
+                
+                db.query(Media).filter(Media.id == m_id).delete()
+                purged_media_count += 1
+
+    db.commit()
+    return {
+        "source_id": source_id,
+        "excluded_paths": source.excluded_paths,
+        "purged_files": purged_files_count,
+        "purged_media": purged_media_count
     }
 
 def browse_server_filesystem(requested_path: Optional[str] = None) -> Dict[str, Any]:

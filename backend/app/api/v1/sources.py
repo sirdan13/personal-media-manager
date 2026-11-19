@@ -12,13 +12,19 @@ from app.services.source_service import (
     delete_source,
     get_source_file_fingerprints,
     reconcile_source_files,
-    browse_server_filesystem
+    browse_server_filesystem,
+    get_source_folders,
+    exclude_and_purge_paths
 )
 from app.api.deps import get_current_user
 from app.models.entities import User
 
 class ReconcileRequest(BaseModel):
     seen_paths: List[str]
+
+class ExclusionRequest(BaseModel):
+    excluded_paths: str
+    purge_existing: bool = True
 
 router = APIRouter(prefix="/sources", tags=["Fonti & Archivi"])
 
@@ -103,3 +109,32 @@ def toggle_status(
     new_status = "offline" if source.status != "offline" else "online"
     source = update_source(db, current_user.id, source_id, SourceUpdate(status=new_status))
     return SourceOut.model_validate(source)
+
+@router.get("/{source_id}/folders")
+def list_source_folders(
+    source_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    List top-level and indexed folders for a source with file counts.
+    """
+    return get_source_folders(db, current_user.id, source_id)
+
+@router.post("/{source_id}/exclusions")
+def set_exclusions(
+    source_id: str,
+    payload: ExclusionRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Configure folder exclusions and optionally purge matching files retroactively.
+    """
+    return exclude_and_purge_paths(
+        db,
+        current_user.id,
+        source_id,
+        payload.excluded_paths,
+        purge_existing=payload.purge_existing
+    )
