@@ -76,6 +76,19 @@ def run_db_migrations(target_engine):
         except Exception as e:
             print("Migration warning (sources):", e)
 
+        # Check files table
+        try:
+            res = conn.execute(text("PRAGMA table_info(files)"))
+            cols = [row[1] for row in res.fetchall()]
+            if cols:
+                if "trash_relative_path" not in cols:
+                    conn.execute(text("ALTER TABLE files ADD COLUMN trash_relative_path TEXT"))
+                if "trashed_at" not in cols:
+                    conn.execute(text("ALTER TABLE files ADD COLUMN trashed_at DATETIME"))
+                conn.commit()
+        except Exception as e:
+            print("Migration warning (files):", e)
+
 def get_db():
     db: Session = SessionLocal()
     try:

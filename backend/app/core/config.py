@@ -38,6 +38,13 @@ class Settings(BaseSettings):
         "http://localhost:8089"
     ]
 
+    # AI Configuration
+    GEMINI_API_KEY: str | None = os.environ.get("GEMINI_API_KEY")
+    GEMINI_API_BASE: str = "https://generativelanguage.googleapis.com/v1beta"
+    GEMINI_DEFAULT_MODEL: str = os.environ.get("GEMINI_DEFAULT_MODEL") or "auto"
+    AI_REQUEST_TIMEOUT_SECONDS: int = 60
+    AI_CACHE_TTL_DAYS: int = 30
+
     model_config = SettingsConfigDict(env_file=".env", extra="allow")
 
 settings = Settings()

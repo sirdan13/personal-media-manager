@@ -10,7 +10,8 @@ import {
   ChevronLeft,
   CheckCircle2,
   Cpu,
-  UserCheck
+  UserCheck,
+  Lightbulb
 } from 'lucide-react';
 
 interface TutorialModalProps {
@@ -185,8 +186,9 @@ export const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose })
             </div>
           </div>
 
-          <div style={{ background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.3)', borderRadius: '8px', padding: '10px 14px', color: '#22c55e', fontSize: '12px' }}>
-            💡 <strong>Suggerimento:</strong> Per creare il tuo account personale, clicca su <strong>Esci</strong> in basso a sinistra nella barra laterale, poi seleziona <em>"Non hai un account? Registrati ora"</em>.
+          <div style={{ background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.3)', borderRadius: '8px', padding: '10px 14px', color: '#22c55e', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Lightbulb size={16} style={{ flexShrink: 0 }} />
+            <span><strong>Suggerimento:</strong> Per creare il tuo account personale, clicca su <strong>Esci</strong> in basso a sinistra nella barra laterale, poi seleziona <em>"Non hai un account? Registrati ora"</em>.</span>
           </div>
         </div>
       )

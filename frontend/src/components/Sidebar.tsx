@@ -31,7 +31,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isOpenMobile = false,
   onCloseMobile
 }) => {
-  const menuItems = [
+  const menuItems: Array<{ id: string; label: string; icon: any; color?: string; badge?: string }> = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'library', label: 'Libreria', icon: Grid },
     { id: 'photos', label: 'Fotografie', icon: Image },
@@ -39,7 +39,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'favorites', label: 'Preferiti', icon: Heart, color: '#f43f5e' },
     { id: 'albums', label: 'Album & Tag', icon: Folder },
     { id: 'map', label: 'Mappa GPS', icon: MapPin },
-    { id: 'duplicates', label: 'Duplicati', icon: Copy, badge: 'Smart' },
+    { id: 'duplicates', label: 'Duplicati', icon: Copy },
     { id: 'sources', label: 'Fonti & Dischi', icon: HardDrive },
     { id: 'scans', label: 'Scansioni', icon: Clock },
     { id: 'settings', label: 'Impostazioni', icon: Settings }
@@ -165,12 +165,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
           background: '#1e293b',
           borderRadius: '10px'
         }}>
-          <div style={{ minWidth: 0, paddingRight: '8px' }}>
-            <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {currentUser?.display_name || 'Utente'}
+          <div
+            title={currentUser?.email || currentUser?.display_name || 'Utente'}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              minWidth: 0,
+              paddingRight: '8px',
+              cursor: 'default'
+            }}
+          >
+            <div style={{
+              width: '28px',
+              height: '28px',
+              borderRadius: '50%',
+              background: '#334155',
+              color: '#38bdf8',
+              fontSize: '12px',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}>
+              {(currentUser?.display_name || currentUser?.username || 'U').charAt(0).toUpperCase()}
             </div>
-            <div style={{ fontSize: '11px', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {currentUser?.email}
+            <div style={{
+              fontSize: '13px',
+              fontWeight: 600,
+              color: '#f8fafc',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap'
+            }}>
+              {currentUser?.display_name || 'Utente'}
             </div>
           </div>
           <button

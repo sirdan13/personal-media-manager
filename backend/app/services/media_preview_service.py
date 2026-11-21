@@ -30,7 +30,7 @@ VIDEO_EXTENSIONS = {
 }
 
 IGNORED_EXTENSIONS = {"aae", "xmp", "lrv", "thm", "dat", "ds_store", "db", "ini", "log"}
-IGNORED_DIR_NAMES = {".trashes", ".fseventsd", ".spotlight-v100", "__macosx", "$recycle.bin", ".git"}
+IGNORED_DIR_NAMES = {".trashes", ".fseventsd", ".spotlight-v100", "__macosx", "$recycle.bin", ".git", ".pmm_trash"}
 
 def extract_largest_embedded_jpeg(filepath: str, max_read_bytes: int = 12 * 1024 * 1024) -> Optional[bytes]:
     """

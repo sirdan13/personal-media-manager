@@ -143,6 +143,7 @@ export const MapView: React.FC<MapViewProps> = ({ onNavigateToLocation }) => {
       if (mapMedia.length === 0) return;
 
       const clusters = clusterMapPoints(mapMedia, map, 56);
+      const PIN_ICON_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:3px;"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>';
 
       for (const cluster of clusters) {
         if (cluster.items.length > 1) {
@@ -181,7 +182,7 @@ export const MapView: React.FC<MapViewProps> = ({ onNavigateToLocation }) => {
           });
           const marker = L.marker([cluster.lat, cluster.lng], { icon });
 
-          const placeStr = cluster.items[0].place_name ? `<div style="font-size: 11px; color: #0284c7; margin-bottom: 4px;">📍 ${escapeHtml(cluster.items[0].place_name)}</div>` : '';
+          const placeStr = cluster.items[0].place_name ? `<div style="font-size: 11px; color: #0284c7; margin-bottom: 4px; display: flex; align-items: center; justify-content: center; gap: 2px;">${PIN_ICON_SVG}<span>${escapeHtml(cluster.items[0].place_name)}</span></div>` : '';
           const clusterPopupHtml = `
             <div style="min-width: 170px; text-align: center; font-family: system-ui, sans-serif;">
               ${placeStr}
@@ -215,7 +216,7 @@ export const MapView: React.FC<MapViewProps> = ({ onNavigateToLocation }) => {
               overflow: hidden;
               cursor: pointer;
             ">
-              ${thumbUrl ? `<img src="${thumbUrl}" style="width: 100%; height: 100%; object-fit: cover;" />` : `<div style="width: 100%; height: 100%; background: #0284c7; display: flex; align-items: center; justify-content: center; color: white; font-size: 11px;">📷</div>`}
+              ${thumbUrl ? `<img src="${thumbUrl}" style="width: 100%; height: 100%; object-fit: cover;" />` : `<div style="width: 100%; height: 100%; background: #0284c7; display: flex; align-items: center; justify-content: center; color: white;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></div>`}
             </div>
           `;
           const icon = L.divIcon({
@@ -228,7 +229,7 @@ export const MapView: React.FC<MapViewProps> = ({ onNavigateToLocation }) => {
 
           const safeFilename = escapeHtml(item.primary_filename || 'Media');
           const safeDate = item.captured_at ? new Date(item.captured_at).toLocaleDateString() : 'Data sconosciuta';
-          const placeHtml = item.place_name ? `<div style="font-size: 11px; color: #0284c7; margin-bottom: 4px;">📍 ${escapeHtml(item.place_name)}</div>` : '';
+          const placeHtml = item.place_name ? `<div style="font-size: 11px; color: #0284c7; margin-bottom: 4px; display: flex; align-items: center; justify-content: center; gap: 2px;">${PIN_ICON_SVG}<span>${escapeHtml(item.place_name)}</span></div>` : '';
 
           const popupContent = `
             <div style="min-width: 160px; max-width: 200px; font-family: system-ui, sans-serif; text-align: center;">

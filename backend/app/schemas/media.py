@@ -19,6 +19,8 @@ class FileOut(BaseModel):
     duration_seconds: Optional[float] = None
     sha256: str
     availability_status: str
+    trash_relative_path: Optional[str] = None
+    trashed_at: Optional[datetime] = None
     metadata_json: Optional[str] = None
     first_indexed_at: datetime
     last_seen_at: datetime

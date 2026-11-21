@@ -126,6 +126,8 @@ class File(Base):
     metadata_json = Column(Text, nullable=True)
     sha256 = Column(String(64), nullable=False, index=True)
     availability_status = Column(String(30), nullable=False, default="available")
+    trash_relative_path = Column(Text, nullable=True)
+    trashed_at = Column(DateTime, nullable=True)
     first_indexed_at = Column(DateTime, default=utc_now, nullable=False)
     last_seen_at = Column(DateTime, default=utc_now, nullable=False)
 
@@ -235,3 +237,46 @@ class MediaTag(Base):
     __table_args__ = (
         UniqueConstraint("media_id", "tag_id", name="uq_media_tag"),
     )
+
+class AISettings(Base):
+    __tablename__ = "ai_settings"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    provider = Column(String(20), nullable=False, default="none")      # none | gemini | ollama
+    model_text = Column(String(100), nullable=True)
+    model_vision = Column(String(100), nullable=True)
+    api_key = Column(Text, nullable=True)                               # solo gemini; MAI restituita dalle API
+    ollama_base_url = Column(String(255), nullable=True, default="http://localhost:11434")
+    allow_cloud_images = Column(Integer, nullable=False, default=0)
+    daily_request_cap = Column(Integer, nullable=False, default=100)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
+
+    user = relationship("User")
+
+class AIUsage(Base):
+    __tablename__ = "ai_usage"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    day = Column(String(10), nullable=False)                            # "YYYY-MM-DD"
+    provider = Column(String(20), nullable=False)
+    requests = Column(Integer, nullable=False, default=0)
+    input_tokens = Column(Integer, nullable=False, default=0)
+    output_tokens = Column(Integer, nullable=False, default=0)
+
+    user = relationship("User")
+
+    __table_args__ = (UniqueConstraint("user_id", "day", "provider", name="uq_ai_usage_day"),)
+
+class AICache(Base):
+    __tablename__ = "ai_cache"
+
+    cache_key = Column(String(64), primary_key=True)                    # sha256 hex
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    feature = Column(String(40), nullable=False)
+    response_json = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+
+    user = relationship("User")
+

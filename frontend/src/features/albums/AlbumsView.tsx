@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ApiClient } from '../../services/api';
+import { ApiClient, SmartAlbumEvent } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 import {
   Folder,
@@ -9,7 +9,10 @@ import {
   Edit2,
   Image as ImageIcon,
   Check,
-  X
+  X,
+  Sparkles,
+  Calendar,
+  MapPin
 } from 'lucide-react';
 
 interface AlbumsViewProps {
@@ -37,11 +40,78 @@ export const AlbumsView: React.FC<AlbumsViewProps> = ({ onSelectAlbum, onSelectT
   const [newTagName, setNewTagName] = useState('');
   const [newTagColor, setNewTagColor] = useState('#38bdf8');
 
+  // Smart Albums State
+  const [smartEvents, setSmartEvents] = useState<SmartAlbumEvent[]>([]);
+  const [loadingSmartEvents, setLoadingSmartEvents] = useState(false);
+  const [smartEngine, setSmartEngine] = useState<string | null>(null);
+  const [creatingEventId, setCreatingEventId] = useState<string | null>(null);
+  const [eventEdits, setEventEdits] = useState<Record<string, { name: string; description: string; tags: string }>>({});
+
   const presetColors = ['#38bdf8', '#22c55e', '#f59e0b', '#ec4899', '#a855f7', '#64748b'];
 
   useEffect(() => {
     loadData();
   }, []);
+
+  const handleDiscoverEvents = async () => {
+    try {
+      setLoadingSmartEvents(true);
+      const res = await ApiClient.suggestSmartAlbums(true, 15);
+      setSmartEvents(res.events);
+      setSmartEngine(res.engine);
+      const initialEdits: Record<string, { name: string; description: string; tags: string }> = {};
+      for (const ev of res.events) {
+        initialEdits[ev.event_id] = {
+          name: ev.suggested_name,
+          description: ev.suggested_description,
+          tags: ev.suggested_tags.join(', ')
+        };
+      }
+      setEventEdits(initialEdits);
+      if (res.events.length > 0) {
+        toast.success(`Trovati ${res.events.length} eventi fotografici con date e luoghi coerenti!`);
+      } else {
+        toast.info('Nessun nuovo evento raggruppabile trovato (minimo 15 foto con data).');
+      }
+    } catch (err) {
+      toast.error(`Errore ricerca eventi: ${(err as Error).message}`);
+    } finally {
+      setLoadingSmartEvents(false);
+    }
+  };
+
+  const handleCreateSmartAlbum = async (ev: SmartAlbumEvent) => {
+    const edits = eventEdits[ev.event_id] || {
+      name: ev.suggested_name,
+      description: ev.suggested_description,
+      tags: ev.suggested_tags.join(', ')
+    };
+    if (!edits.name.trim()) return;
+
+    try {
+      setCreatingEventId(ev.event_id);
+      const tagsList = edits.tags
+        .split(',')
+        .map(t => t.trim())
+        .filter(Boolean);
+
+      const res = await ApiClient.createSmartAlbum({
+        event_id: ev.event_id,
+        name: edits.name.trim(),
+        description: edits.description.trim() || undefined,
+        tags: tagsList
+      });
+
+      toast.success(`Album "${edits.name.trim()}" creato con ${res.added_count} foto e ${res.tags_applied} tag!`);
+      // Remove created event from list
+      setSmartEvents(prev => prev.filter(e => e.event_id !== ev.event_id));
+      await loadData();
+    } catch (err) {
+      toast.error(`Errore creazione album: ${(err as Error).message}`);
+    } finally {
+      setCreatingEventId(null);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -148,25 +218,225 @@ export const AlbumsView: React.FC<AlbumsViewProps> = ({ onSelectAlbum, onSelectT
             </p>
           </div>
 
-          <button
-            onClick={() => setShowNewAlbumModal(true)}
-            style={{
-              background: '#0284c7',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              padding: '9px 16px',
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}
-          >
-            <Plus size={16} /> Nuovo Album
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={handleDiscoverEvents}
+              disabled={loadingSmartEvents}
+              style={{
+                background: 'rgba(168, 85, 247, 0.15)',
+                color: '#c084fc',
+                border: '1px solid rgba(168, 85, 247, 0.4)',
+                borderRadius: '8px',
+                padding: '9px 16px',
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: loadingSmartEvents ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <Sparkles size={16} className={loadingSmartEvents ? 'animate-spin' : ''} />
+              {loadingSmartEvents ? 'Ricerca eventi in corso...' : 'Trova Eventi & Album Suggeriti'}
+            </button>
+
+            <button
+              onClick={() => setShowNewAlbumModal(true)}
+              style={{
+                background: '#0284c7',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '9px 16px',
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <Plus size={16} /> Nuovo Album
+            </button>
+          </div>
         </div>
+
+        {/* Smart Suggested Albums Section */}
+        {smartEvents.length > 0 && (
+          <div style={{
+            background: '#0f172a',
+            border: '1px solid #334155',
+            borderRadius: '16px',
+            padding: '20px',
+            marginBottom: '24px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Sparkles size={18} color="#a855f7" />
+                <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0 }}>
+                  Eventi Fotografici Rilevati ({smartEvents.length})
+                </h3>
+                {smartEngine && (
+                  <span style={{
+                    fontSize: '10px',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    background: smartEngine === 'heuristic' ? 'rgba(56, 189, 248, 0.2)' : 'rgba(168, 85, 247, 0.2)',
+                    color: smartEngine === 'heuristic' ? '#38bdf8' : '#c084fc',
+                    fontWeight: 700
+                  }}>
+                    {smartEngine.toUpperCase()}
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => setSmartEvents([])}
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '12px', cursor: 'pointer' }}
+              >
+                Nascondi
+              </button>
+            </div>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+              gap: '16px'
+            }}>
+              {smartEvents.map((ev) => {
+                const edits = eventEdits[ev.event_id] || {
+                  name: ev.suggested_name,
+                  description: ev.suggested_description,
+                  tags: ev.suggested_tags.join(', ')
+                };
+                const isCreating = creatingEventId === ev.event_id;
+
+                const startDate = new Date(ev.start).toLocaleDateString();
+                const endDate = new Date(ev.end).toLocaleDateString();
+
+                return (
+                  <div
+                    key={ev.event_id}
+                    style={{
+                      background: '#1e293b',
+                      border: '1px solid #334155',
+                      borderRadius: '12px',
+                      padding: '14px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', gap: '12px' }}>
+                      <div style={{
+                        width: '80px',
+                        height: '80px',
+                        borderRadius: '8px',
+                        background: '#090d16',
+                        overflow: 'hidden',
+                        flexShrink: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        <img
+                          src={ApiClient.getThumbnailUrl(ev.cover_media_id)}
+                          alt="Cover"
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          onError={(e) => {
+                            (e.target as any).style.display = 'none';
+                          }}
+                        />
+                      </div>
+
+                      <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#38bdf8' }}>
+                          <Calendar size={12} />
+                          <span>{startDate === endDate ? startDate : `${startDate} - ${endDate}`}</span>
+                          <span style={{ color: '#64748b' }}>•</span>
+                          <span style={{ color: '#22c55e', fontWeight: 600 }}>{ev.media_count} foto</span>
+                        </div>
+
+                        {ev.top_places.length > 0 && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#94a3b8' }}>
+                            <MapPin size={12} color="#f59e0b" />
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {ev.top_places.map(p => p.place_name).join(', ')}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Inputs */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <input
+                        type="text"
+                        value={edits.name}
+                        onChange={(e) => setEventEdits({
+                          ...eventEdits,
+                          [ev.event_id]: { ...edits, name: e.target.value }
+                        })}
+                        placeholder="Nome album"
+                        style={{
+                          background: '#0f172a',
+                          border: '1px solid #334155',
+                          borderRadius: '6px',
+                          color: '#f8fafc',
+                          padding: '6px 10px',
+                          fontSize: '12px',
+                          fontWeight: 600
+                        }}
+                      />
+                      <input
+                        type="text"
+                        value={edits.tags}
+                        onChange={(e) => setEventEdits({
+                          ...eventEdits,
+                          [ev.event_id]: { ...edits, tags: e.target.value }
+                        })}
+                        placeholder="Tag (separati da virgola, es: vacanze, mare)"
+                        style={{
+                          background: '#0f172a',
+                          border: '1px solid #334155',
+                          borderRadius: '6px',
+                          color: '#94a3b8',
+                          padding: '4px 8px',
+                          fontSize: '11px'
+                        }}
+                      />
+                    </div>
+
+                    <button
+                      onClick={() => handleCreateSmartAlbum(ev)}
+                      disabled={isCreating || !edits.name.trim()}
+                      style={{
+                        background: '#a855f7',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '6px 12px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        cursor: isCreating ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        marginTop: '4px'
+                      }}
+                    >
+                      <Plus size={14} />
+                      {isCreating ? 'Creazione in corso...' : 'Crea Album & Applica Tag'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Albums Grid */}
         {albums.length === 0 && !loading ? (

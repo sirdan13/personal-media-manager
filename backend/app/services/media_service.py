@@ -15,6 +15,8 @@ RAW_EXTENSIONS = {
     "x3f", "rwl", "erf", "kdc", "dcr", "mos"
 }
 
+INACTIVE_FILE_STATUSES = ("missing", "trashed")
+
 def compute_protection_status(copies_count: int, distinct_sources_count: int) -> str:
     if copies_count > distinct_sources_count:
         return "intra_source_duplicate"
@@ -48,7 +50,7 @@ def list_user_media(
             func.count(func.distinct(File.id)).label("c_files"),
             func.count(func.distinct(File.source_id)).label("c_sources")
         )
-        .filter(File.availability_status != "missing")
+        .filter(File.availability_status.notin_(INACTIVE_FILE_STATUSES))
         .group_by(File.media_id)
         .subquery()
     )
@@ -216,6 +218,8 @@ def get_media_detail(db: Session, user_id: str, media_id: str) -> MediaDetailOut
             duration_seconds=f.duration_seconds,
             sha256=f.sha256,
             availability_status=f.availability_status,
+            trash_relative_path=f.trash_relative_path,
+            trashed_at=f.trashed_at,
             metadata_json=f.metadata_json,
             first_indexed_at=f.first_indexed_at,
             last_seen_at=f.last_seen_at
@@ -234,7 +238,7 @@ def get_media_detail(db: Session, user_id: str, media_id: str) -> MediaDetailOut
                  .filter(MediaTag.media_id == media.id).all()
     media_tags = [MediaAlbumTagItem(id=t_id, name=t_name, color=t_color) for t_id, t_name, t_color in tag_rows]
 
-    active_files = [f for f in file_outs if f.availability_status != "missing"]
+    active_files = [f for f in file_outs if f.availability_status not in INACTIVE_FILE_STATUSES]
     if active_files:
         c_count = len(active_files)
         s_count = len({f.source_id for f in active_files})
@@ -360,13 +364,16 @@ def list_duplicate_groups(
     user_id: str,
     offset: int = 0,
     limit: int = 50,
-    mode: str = "all"
+    mode: str = "all",
+    sort_by: str = "size_desc"
 ) -> List[DuplicateGroupOut]:
     subq_builder = db.query(
         File.media_id,
         func.count(File.id).label("c"),
-        func.count(func.distinct(File.source_id)).label("s")
-    ).filter(File.availability_status != "missing")\
+        func.count(func.distinct(File.source_id)).label("s"),
+        func.max(File.size_bytes).label("file_size"),
+        (func.max(File.size_bytes) * (func.count(File.id) - func.count(func.distinct(File.source_id)))).label("wasted_size")
+    ).filter(File.availability_status.notin_(INACTIVE_FILE_STATUSES))\
      .group_by(File.media_id)
 
     if mode == "intra_source":
@@ -379,10 +386,25 @@ def list_duplicate_groups(
     else:  # "all"
         subquery = subq_builder.having(func.count(File.id) > 1).subquery()
 
-    rows = db.query(Media).join(subquery, Media.id == subquery.c.media_id)\
-             .filter(Media.user_id == user_id)\
-             .order_by(desc(Media.created_at))\
-             .offset(offset).limit(limit).all()
+    query = db.query(Media).join(subquery, Media.id == subquery.c.media_id)\
+             .filter(Media.user_id == user_id)
+
+    if sort_by == "size_desc":
+        query = query.order_by(desc(subquery.c.file_size), desc(Media.created_at))
+    elif sort_by == "size_asc":
+        query = query.order_by(asc(subquery.c.file_size), desc(Media.created_at))
+    elif sort_by == "wasted_desc":
+        query = query.order_by(desc(subquery.c.wasted_size), desc(subquery.c.file_size), desc(Media.created_at))
+    elif sort_by == "copies_desc":
+        query = query.order_by(desc(subquery.c.c), desc(subquery.c.file_size), desc(Media.created_at))
+    elif sort_by == "oldest":
+        query = query.order_by(asc(Media.created_at))
+    elif sort_by == "newest":
+        query = query.order_by(desc(Media.created_at))
+    else:
+        query = query.order_by(desc(subquery.c.file_size), desc(Media.created_at))
+
+    rows = query.offset(offset).limit(limit).all()
 
     if not rows:
         return []
@@ -391,7 +413,7 @@ def list_duplicate_groups(
 
     # Bulk query 1: All files for these media
     files_with_sources = db.query(File, Source).join(Source, File.source_id == Source.id)\
-                           .filter(File.media_id.in_(page_media_ids), File.availability_status != "missing").all()
+                           .filter(File.media_id.in_(page_media_ids), File.availability_status.notin_(INACTIVE_FILE_STATUSES)).all()
 
     files_by_media: Dict[str, List[FileOut]] = {mid: [] for mid in page_media_ids}
     total_sizes_by_media: Dict[str, int] = {mid: 0 for mid in page_media_ids}
@@ -414,6 +436,8 @@ def list_duplicate_groups(
             duration_seconds=f.duration_seconds,
             sha256=f.sha256,
             availability_status=f.availability_status,
+            trash_relative_path=f.trash_relative_path,
+            trashed_at=f.trashed_at,
             metadata_json=f.metadata_json,
             first_indexed_at=f.first_indexed_at,
             last_seen_at=f.last_seen_at
@@ -465,7 +489,7 @@ def get_duplicates_summary(db: Session, user_id: str) -> Dict[str, Any]:
         func.count(func.distinct(File.source_id)).label("sources"),
         func.coalesce(func.max(File.size_bytes), 0).label("max_size")
     ).join(File, Media.id == File.media_id)\
-     .filter(Media.user_id == user_id, File.availability_status != "missing")\
+     .filter(Media.user_id == user_id, File.availability_status.notin_(INACTIVE_FILE_STATUSES))\
      .group_by(Media.id, Media.is_favorite).subquery()
 
     rows = db.query(
@@ -548,7 +572,7 @@ def compute_backup_gap(
      .filter(
          Media.user_id == user_id,
          File.source_id == primary_source_id,
-         File.availability_status != "missing"
+         File.availability_status.notin_(INACTIVE_FILE_STATUSES)
      )
 
     if only_favorites:
@@ -570,7 +594,7 @@ def compute_backup_gap(
                     .filter(
                         Media.user_id == user_id,
                         File.source_id == backup_source_id,
-                        File.availability_status != "missing"
+                        File.availability_status.notin_(INACTIVE_FILE_STATUSES)
                     ).distinct().all()
     backed_up_media_ids = {r[0] for r in backup_rows}
 

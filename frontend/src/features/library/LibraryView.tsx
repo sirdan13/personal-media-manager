@@ -15,7 +15,12 @@ import {
   Square,
   Play,
   Folder,
-  Tag as TagIcon
+  Tag as TagIcon,
+  ShieldCheck,
+  AlertTriangle,
+  MapPin,
+  X,
+  Check
 } from 'lucide-react';
 import { isRawExtension } from '../scanner/formatDetector';
 import { MediaDetailModal } from './MediaDetailModal';
@@ -181,7 +186,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     try {
       const res = await ApiClient.toggleFavorite(id);
       setMediaList((prev) => prev.map((m) => m.id === id ? { ...m, is_favorite: res.is_favorite } : m));
-      toast.success(res.is_favorite ? 'Aggiunto ai preferiti ❤️' : 'Rimosso dai preferiti');
+      toast.success(res.is_favorite ? 'Aggiunto ai preferiti' : 'Rimosso dai preferiti');
     } catch (err) {
       toast.error((err as Error).message);
     }
@@ -466,7 +471,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             gap: '4px',
             boxShadow: '0 2px 4px rgba(0,0,0,0.5)'
           }}>
-            🛡️ {media.distinct_sources_count || 2} DISCHI
+            <ShieldCheck size={11} /> {media.distinct_sources_count || 2} DISCHI
           </span>
         ) : media.protection_status === 'intra_source_duplicate' ? (
           <span style={{
@@ -484,8 +489,8 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             gap: '4px',
             boxShadow: '0 2px 4px rgba(0,0,0,0.5)'
           }}>
-            <Copy size={11} />
-            ⚠️ {media.copies_count} COPIE · {media.distinct_sources_count || 1} {(media.distinct_sources_count || 1) === 1 ? 'DISCO' : 'DISCHI'}
+            <AlertTriangle size={11} />
+            {media.copies_count} COPIE · {media.distinct_sources_count || 1} {(media.distinct_sources_count || 1) === 1 ? 'DISCO' : 'DISCHI'}
           </span>
         ) : (!media.protection_status && media.copies_count > 1) ? (
           <span style={{
@@ -528,9 +533,13 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             color: '#38bdf8',
             whiteSpace: 'nowrap',
             overflow: 'hidden',
-            textOverflow: 'ellipsis'
+            textOverflow: 'ellipsis',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '3px'
           }}>
-            📍 {media.place_name}
+            <MapPin size={11} style={{ flexShrink: 0 }} />
+            <span>{media.place_name}</span>
           </div>
         )}
 
@@ -565,7 +574,8 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           fontSize: '13px'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>📍 Filtrato per posizione: <strong>{geoFilter.label || 'Area Geografica Selezionata sulla Mappa'}</strong></span>
+            <MapPin size={15} style={{ flexShrink: 0 }} />
+            <span>Filtrato per posizione: <strong>{geoFilter.label || 'Area Geografica Selezionata sulla Mappa'}</strong></span>
           </div>
           <button
             onClick={() => {
@@ -706,10 +716,11 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 border: 'none',
                 color: '#94a3b8',
                 cursor: 'pointer',
-                fontSize: '14px'
+                display: 'flex',
+                alignItems: 'center'
               }}
             >
-              ✕
+              <X size={14} />
             </button>
           )}
         </div>
@@ -886,7 +897,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 fontSize: '12px'
               }}
             >
-              <option value="">📁 Tutti gli Album</option>
+              <option value="">Tutti gli Album</option>
               {albums.map((a) => (
                 <option key={a.id} value={a.id}>{a.name} ({a.media_count})</option>
               ))}
@@ -907,7 +918,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 fontSize: '12px'
               }}
             >
-              <option value="">🏷️ Tutti i Tag</option>
+              <option value="">Tutti i Tag</option>
               {tags.map((t) => (
                 <option key={t.id} value={t.id}>#{t.name} ({t.media_count})</option>
               ))}
@@ -948,10 +959,10 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               fontSize: '12px'
             }}
           >
-            <option value="">🛡️ Tutti gli stati backup</option>
-            <option value="protected">🟢 Protetti (2+ Dischi)</option>
-            <option value="unprotected">🔴 A Rischio (1 Solo Disco)</option>
-            <option value="intra_source_duplicate">🟠 Duplicati Intra-Disco (Spreco)</option>
+            <option value="">Tutti gli stati backup</option>
+            <option value="protected">Protetti (2+ Dischi)</option>
+            <option value="unprotected">A Rischio (1 Solo Disco)</option>
+            <option value="intra_source_duplicate">Duplicati Intra-Disco (Spreco)</option>
           </select>
 
           {/* Sort order dropdown */}
@@ -998,8 +1009,9 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontSize: '13px', fontWeight: 700, color: '#38bdf8' }}>
-              ✓ {selectedIds.size} {selectedIds.size === 1 ? 'selezionato' : 'selezionati'}
+            <span style={{ fontSize: '13px', fontWeight: 700, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <Check size={14} />
+              {selectedIds.size} {selectedIds.size === 1 ? 'selezionato' : 'selezionati'}
             </span>
             <button
               onClick={handleSelectAll}

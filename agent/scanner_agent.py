@@ -57,7 +57,7 @@ SUPPORTED_VIDEO_EXTS = {
     ".mts", ".m2ts", ".mpg", ".mpeg", ".3gp", ".insv"
 }
 SUPPORTED_EXTS = SUPPORTED_IMAGE_EXTS | SUPPORTED_VIDEO_EXTS
-IGNORED_DIR_NAMES = {".git", ".svn", "__pycache__", "node_modules", "venv", ".DS_Store", "@eaDir", ".Spotlight-V100", ".Trashes"}
+IGNORED_DIR_NAMES = {".git", ".svn", "__pycache__", "node_modules", "venv", ".DS_Store", "@eaDir", ".Spotlight-V100", ".Trashes", ".pmm_trash"}
 
 
 class ScannerAgent:

@@ -4,6 +4,10 @@ export const IGNORED_EXTENSIONS = new Set([
   'aae', 'xmp', 'lrv', 'thm', 'dat', 'ds_store', 'db', 'ini'
 ]);
 
+export const IGNORED_DIRECTORIES = new Set([
+  '.pmm_trash', '.trashes', '.fseventsd', '.spotlight-v100', '__macosx', '$recycle.bin', '.git'
+]);
+
 export interface DiscoveredFileItem {
   file: File;
   relativePath: string;
@@ -67,7 +71,9 @@ export async function* traverseDirectoryHandle(
         filesInDir.push(entry as FileSystemFileHandle);
       }
     } else if (entry.kind === 'directory') {
-      subDirs.push(entry as FileSystemDirectoryHandle);
+      if (!IGNORED_DIRECTORIES.has(entry.name.toLowerCase())) {
+        subDirs.push(entry as FileSystemDirectoryHandle);
+      }
     }
   }
 
@@ -112,6 +118,9 @@ export function* traverseFileList(
     const ext = getFileExtension(file.name);
     if (ext === 'aae' || ext === 'xmp') {
       const path = file.webkitRelativePath || file.name;
+    const pathLower = path.toLowerCase();
+    const segments = pathLower.split('/');
+    if (segments.some(seg => IGNORED_DIRECTORIES.has(seg))) continue;
       const slashIdx = path.lastIndexOf('/');
       const parentDir = slashIdx !== -1 ? path.substring(0, slashIdx) : '';
       if (!sidecarsByDir.has(parentDir)) {
@@ -127,6 +136,9 @@ export function* traverseFileList(
     if (IGNORED_EXTENSIONS.has(ext) || !isSupportedMedia(ext)) continue;
 
     const path = file.webkitRelativePath || file.name;
+    const pathLower = path.toLowerCase();
+    const segments = pathLower.split('/');
+    if (segments.some(seg => IGNORED_DIRECTORIES.has(seg))) continue;
     const slashIdx = path.indexOf('/');
     const relativePath = slashIdx !== -1 ? path.slice(slashIdx + 1) : path;
 

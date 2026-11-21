@@ -161,13 +161,15 @@ def reconcile_source_files(db: Session, user_id: str, source_id: str, seen_paths
 
     for f in files:
         if f.relative_path not in seen_set:
-            if f.availability_status != "missing":
+            if f.availability_status not in ("missing", "trashed"):
                 f.availability_status = "missing"
                 marked_missing += 1
         else:
             total_active += 1
-            if f.availability_status == "missing":
+            if f.availability_status in ("missing", "trashed"):
                 f.availability_status = "available"
+                f.trash_relative_path = None
+                f.trashed_at = None
                 restored_available += 1
 
     db.commit()
@@ -178,10 +180,14 @@ def reconcile_source_files(db: Session, user_id: str, source_id: str, seen_paths
     }
 
 def is_path_excluded(rel_path: str, excluded_patterns: List[str]) -> bool:
-    if not rel_path or not excluded_patterns:
+    if not rel_path:
         return False
     rel_clean = rel_path.replace("\\", "/").strip("/").lower()
     parts = rel_clean.split("/")
+    if ".pmm_trash" in parts or rel_clean == ".pmm_trash" or rel_clean.startswith(".pmm_trash/"):
+        return True
+    if not excluded_patterns:
+        return False
     filename = os.path.basename(rel_clean)
 
     for pat in excluded_patterns:
