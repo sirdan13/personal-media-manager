@@ -2,14 +2,33 @@ import csv
 import io
 import json
 from typing import List, Optional
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.schemas.media import DuplicateGroupOut
 from app.services.media_service import list_duplicate_groups, get_duplicates_summary, compute_backup_gap
 from app.services.dhash_service import find_similar_media_groups
+from app.services.trash_service import (
+    trash_duplicate_files,
+    trash_similar_media,
+    list_trashed_files,
+    restore_trashed_files
+)
 from app.api.deps import get_current_user
 from app.models.entities import User, Media, File, Source
+
+class TrashFilesRequest(BaseModel):
+    file_ids: List[str]
+    keep_file_ids: Optional[List[str]] = None
+
+class TrashSimilarRequest(BaseModel):
+    keep_media_id: str
+    trash_media_ids: List[str]
+    max_distance: int = 10
+
+class RestoreFilesRequest(BaseModel):
+    file_ids: List[str]
 
 router = APIRouter(prefix="/duplicates", tags=["Duplicati Esatti"])
 
@@ -18,10 +37,11 @@ def get_duplicates(
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     mode: str = Query("all", pattern="^(all|intra_source|multi_source)$"),
+    sort_by: str = Query("size_desc", pattern="^(size_desc|size_asc|wasted_desc|copies_desc|newest|oldest)$"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    return list_duplicate_groups(db, current_user.id, offset, limit, mode=mode)
+    return list_duplicate_groups(db, current_user.id, offset, limit, mode=mode, sort_by=sort_by)
 
 @router.get("/summary")
 def get_duplicates_summary_endpoint(
@@ -78,11 +98,12 @@ def get_backup_gap_endpoint(
 def export_duplicate_report(
     format: str = Query("csv", pattern="^(csv|json)$"),
     mode: str = Query("all", pattern="^(all|intra_source|multi_source)$"),
+    sort_by: str = Query("size_desc", pattern="^(size_desc|size_asc|wasted_desc|copies_desc|newest|oldest)$"),
     preferred_source_id: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    groups = list_duplicate_groups(db, current_user.id, offset=0, limit=10000, mode=mode)
+    groups = list_duplicate_groups(db, current_user.id, offset=0, limit=10000, mode=mode, sort_by=sort_by)
     
     rows = []
     for g in groups:
@@ -139,6 +160,7 @@ def export_duplicate_report(
 def get_similar_photos(
     max_distance: int = Query(6, ge=0, le=32),
     max_time_diff_hours: Optional[int] = Query(None, ge=1, le=8760),
+    limit: int = Query(100, ge=1, le=500),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -146,5 +168,50 @@ def get_similar_photos(
         db,
         current_user.id,
         max_distance=max_distance,
-        max_time_diff_hours=max_time_diff_hours
+        max_time_diff_hours=max_time_diff_hours,
+        limit=limit
     )
+
+@router.post("/trash")
+def trash_duplicates_endpoint(
+    payload: TrashFilesRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return trash_duplicate_files(
+        db,
+        current_user.id,
+        payload.file_ids,
+        payload.keep_file_ids
+    )
+
+@router.post("/trash-similar")
+def trash_similar_endpoint(
+    payload: TrashSimilarRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return trash_similar_media(
+        db=db,
+        user_id=current_user.id,
+        keep_media_id=payload.keep_media_id,
+        trash_media_ids=payload.trash_media_ids,
+        max_distance=payload.max_distance
+    )
+
+
+@router.get("/trash")
+def get_trashed_files_endpoint(
+    source_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return list_trashed_files(db, current_user.id, source_id=source_id)
+
+@router.post("/trash/restore")
+def restore_duplicates_endpoint(
+    payload: RestoreFilesRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return restore_trashed_files(db, current_user.id, payload.file_ids)
