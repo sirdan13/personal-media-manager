@@ -10,6 +10,7 @@ import {
   ExternalLink,
   FileText,
   Folder,
+  FolderOpen,
   Tag as TagIcon,
   Plus,
   Play,
@@ -17,7 +18,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
-  Sparkles
+  Sparkles,
+  ShieldCheck,
+  AlertTriangle,
+  ShieldAlert
 } from 'lucide-react';
 
 interface MediaDetailModalProps {
@@ -55,6 +59,35 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
   const [newAlbumName, setNewAlbumName] = useState('');
   const [showNewTagInput, setShowNewTagInput] = useState(false);
   const [newTagName, setNewTagName] = useState('');
+
+  // Finder reveal state
+  const [revealingFileId, setRevealingFileId] = useState<string | null>(null);
+  const [isRevealingPrimary, setIsRevealingPrimary] = useState<boolean>(false);
+
+  const handleRevealFile = async (fileId: string, filename?: string) => {
+    try {
+      setRevealingFileId(fileId);
+      await ApiClient.revealFile(fileId);
+      toast.success(`Aperto nel Finder: ${filename || 'file'}`);
+    } catch (err) {
+      toast.error((err as Error).message || 'Impossibile aprire nel Finder');
+    } finally {
+      setRevealingFileId(null);
+    }
+  };
+
+  const handleRevealMedia = async () => {
+    if (!mediaId) return;
+    try {
+      setIsRevealingPrimary(true);
+      const res = await ApiClient.revealMedia(mediaId);
+      toast.success(`Aperto nel Finder: ${res.filename} (${res.source_name})`);
+    } catch (err) {
+      toast.error((err as Error).message || 'Impossibile aprire nel Finder');
+    } finally {
+      setIsRevealingPrimary(false);
+    }
+  };
   const [newTagColor, setNewTagColor] = useState('#38bdf8');
   const [isPlayingVideo, setIsPlayingVideo] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
@@ -124,7 +157,7 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
       if (onFavoriteChanged) {
         onFavoriteChanged(mediaId, res.is_favorite);
       }
-      toast.success(res.is_favorite ? 'Aggiunto ai preferiti ❤️' : 'Rimosso dai preferiti');
+      toast.success(res.is_favorite ? 'Aggiunto ai preferiti' : 'Rimosso dai preferiti');
     } catch (err) {
       toast.error((err as Error).message);
     }
@@ -278,9 +311,13 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
                   borderRadius: '6px',
                   background: 'rgba(34, 197, 94, 0.15)',
                   color: '#22c55e',
-                  border: '1px solid rgba(34, 197, 94, 0.3)'
+                  border: '1px solid rgba(34, 197, 94, 0.3)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px'
                 }}>
-                  🛡️ Protetto su {data.distinct_sources_count} dischi
+                  <ShieldCheck size={13} />
+                  Protetto su {data.distinct_sources_count} dischi
                 </span>
               )}
               {data?.protection_status === 'intra_source_duplicate' && (
@@ -291,9 +328,13 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
                   borderRadius: '6px',
                   background: 'rgba(245, 158, 11, 0.15)',
                   color: '#f59e0b',
-                  border: '1px solid rgba(245, 158, 11, 0.3)'
+                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px'
                 }}>
-                  ⚠️ Doppioni sullo stesso disco
+                  <AlertTriangle size={13} />
+                  Doppioni sullo stesso disco
                 </span>
               )}
               {data?.protection_status === 'unprotected' && (
@@ -304,14 +345,40 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
                   borderRadius: '6px',
                   background: 'rgba(244, 63, 94, 0.15)',
                   color: '#f43f5e',
-                  border: '1px solid rgba(244, 63, 94, 0.3)'
+                  border: '1px solid rgba(244, 63, 94, 0.3)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px'
                 }}>
-                  🔴 A Rischio (1 Solo Disco)
+                  <ShieldAlert size={13} />
+                  A Rischio (1 Solo Disco)
                 </span>
               )}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              onClick={handleRevealMedia}
+              disabled={isRevealingPrimary || data?.files?.every((f: any) => f.source_status === 'offline')}
+              style={{
+                background: 'rgba(51, 65, 85, 0.6)',
+                border: '1px solid #475569',
+                color: data?.files?.every((f: any) => f.source_status === 'offline') ? '#64748b' : '#38bdf8',
+                borderRadius: '8px',
+                padding: '6px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: data?.files?.every((f: any) => f.source_status === 'offline') ? 'not-allowed' : 'pointer',
+                opacity: data?.files?.every((f: any) => f.source_status === 'offline') ? 0.6 : 1
+              }}
+              title={data?.files?.every((f: any) => f.source_status === 'offline') ? 'Tutti i dischi contenenti copie sono offline' : 'Evidenzia questo file nel Finder sul disco collegato'}
+            >
+              <FolderOpen size={16} />
+              {isRevealingPrimary ? 'Apertura Finder...' : 'Mostra nel Finder'}
+            </button>
             <button
               onClick={async () => {
                 if (!mediaId) return;
@@ -321,7 +388,7 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
                   if (onFavoriteChanged) {
                     onFavoriteChanged(mediaId, res.is_favorite);
                   }
-                  toast.success(res.is_favorite ? 'Aggiunto ai preferiti ❤️' : 'Rimosso dai preferiti');
+                  toast.success(res.is_favorite ? 'Aggiunto ai preferiti' : 'Rimosso dai preferiti');
                 } catch (err) {
                   toast.error((err as Error).message);
                 }
@@ -1119,8 +1186,36 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
                         <div style={{ color: '#94a3b8', fontSize: '11px', marginTop: '4px', wordBreak: 'break-all' }}>
                           <code>{f.relative_path}</code>
                         </div>
-                        <div style={{ color: '#64748b', fontSize: '10px', marginTop: '4px' }}>
-                          Ultima verifica: {new Date(f.last_seen_at).toLocaleDateString()}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+                          <div style={{ color: '#64748b', fontSize: '10px' }}>
+                            {formatBytes(f.size_bytes)} · Ultima verifica: {new Date(f.last_seen_at).toLocaleDateString()}
+                          </div>
+                          <button
+                            type="button"
+                            disabled={f.source_status === 'offline' || f.availability_status === 'missing' || revealingFileId === f.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRevealFile(f.id, f.filename);
+                            }}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '3px 8px',
+                              borderRadius: '4px',
+                              background: f.source_status === 'offline' ? '#1e293b' : 'rgba(2, 132, 199, 0.15)',
+                              border: '1px solid ' + (f.source_status === 'offline' ? '#334155' : 'rgba(56, 189, 248, 0.4)'),
+                              color: f.source_status === 'offline' ? '#64748b' : '#38bdf8',
+                              fontSize: '11px',
+                              fontWeight: 500,
+                              cursor: f.source_status === 'offline' ? 'not-allowed' : 'pointer',
+                              opacity: f.source_status === 'offline' ? 0.6 : 1
+                            }}
+                            title={f.source_status === 'offline' ? 'Disco non collegato al computer' : 'Evidenzia questo file nel Finder'}
+                          >
+                            <FolderOpen size={12} />
+                            {revealingFileId === f.id ? 'Apertura...' : 'Mostra nel Finder'}
+                          </button>
                         </div>
                       </div>
                     ))}

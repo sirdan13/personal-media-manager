@@ -1,4 +1,6 @@
 import os
+import platform
+import subprocess
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, HTTPException, status, Response
 from fastapi.responses import FileResponse
@@ -239,4 +241,106 @@ def get_media_preview(
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Disco offline o anteprima non generabile per questo media"
+    )
+
+
+def reveal_path_in_file_manager(abs_path: str) -> None:
+    system = platform.system()
+    if system == "Darwin":
+        subprocess.Popen(["open", "-R", abs_path])
+    elif system == "Windows":
+        subprocess.Popen(["explorer", f"/select,{os.path.normpath(abs_path)}"])
+    else:
+        parent = os.path.dirname(abs_path) if os.path.isfile(abs_path) else abs_path
+        subprocess.Popen(["xdg-open", parent])
+
+
+@router.post("/files/{file_id}/reveal")
+def reveal_file_endpoint(
+    file_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    f_obj = db.query(File).join(Media, File.media_id == Media.id)\
+              .filter(File.id == file_id, Media.user_id == current_user.id).first()
+    if not f_obj:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File non trovato")
+
+    source = db.query(Source).filter(Source.id == f_obj.source_id).first()
+    if not source or not source.root_path or not os.path.isdir(source.root_path):
+        source_name = source.name if source else "sconosciuto"
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Il disco '{source_name}' non è raggiungibile o è scollegato."
+        )
+
+    rel_path = f_obj.trash_relative_path if f_obj.availability_status == "trashed" else f_obj.relative_path
+    safe_path = resolve_safe_source_file(source.root_path, rel_path)
+    if not safe_path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"File non trovato fisicamente sul disco: {rel_path}"
+        )
+
+    try:
+        reveal_path_in_file_manager(safe_path)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Impossibile aprire il gestore file: {str(e)}"
+        )
+
+    return {
+        "status": "success",
+        "file_id": f_obj.id,
+        "filename": f_obj.filename,
+        "source_name": source.name,
+        "path": safe_path
+    }
+
+
+@router.post("/{media_id}/reveal")
+def reveal_media_endpoint(
+    media_id: str,
+    file_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    media = db.query(Media).filter(Media.id == media_id, Media.user_id == current_user.id).first()
+    if not media:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media non trovato")
+
+    query = db.query(File, Source).join(Source, File.source_id == Source.id)\
+              .filter(File.media_id == media_id, Source.user_id == current_user.id)
+    if file_id:
+        query = query.filter(File.id == file_id)
+
+    files = query.all()
+    if not files:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nessun file associato a questo media")
+
+    for f, s in files:
+        if s.root_path and os.path.isdir(s.root_path):
+            rel_path = f.trash_relative_path if f.availability_status == "trashed" else f.relative_path
+            safe_path = resolve_safe_source_file(s.root_path, rel_path)
+            if safe_path:
+                try:
+                    reveal_path_in_file_manager(safe_path)
+                    return {
+                        "status": "success",
+                        "file_id": f.id,
+                        "filename": f.filename,
+                        "source_name": s.name,
+                        "path": safe_path
+                    }
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Impossibile aprire il gestore file: {str(e)}"
+                    )
+
+    source_names = ", ".join({s.name for _, s in files})
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=f"Tutti i dischi contenenti copie di questo media sono scollegati ({source_names})."
     )

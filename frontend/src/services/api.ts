@@ -361,8 +361,28 @@ export class ApiClient {
     return this.request<any>(`/media/${mediaId}`);
   }
 
-  public static async getDuplicates(offset = 0, limit = 50, mode: 'all' | 'intra_source' | 'multi_source' = 'all') {
-    return this.request<any[]>(`/duplicates?offset=${offset}&limit=${limit}&mode=${mode}`);
+  public static async revealFile(fileId: string) {
+    return this.request<{ status: string; file_id: string; filename: string; source_name: string; path: string }>(
+      `/media/files/${fileId}/reveal`,
+      { method: 'POST' }
+    );
+  }
+
+  public static async revealMedia(mediaId: string, fileId?: string) {
+    const query = fileId ? `?file_id=${encodeURIComponent(fileId)}` : '';
+    return this.request<{ status: string; file_id: string; filename: string; source_name: string; path: string }>(
+      `/media/${mediaId}/reveal${query}`,
+      { method: 'POST' }
+    );
+  }
+
+  public static async getDuplicates(
+    offset = 0,
+    limit = 50,
+    mode: 'all' | 'intra_source' | 'multi_source' = 'all',
+    sortBy: string = 'size_desc'
+  ) {
+    return this.request<any[]>(`/duplicates?offset=${offset}&limit=${limit}&mode=${mode}&sort_by=${sortBy}`);
   }
 
   public static async getDuplicatesSummary() {
@@ -408,9 +428,69 @@ export class ApiClient {
     return this.request<any[]>(url);
   }
 
-  public static getDuplicateExportUrl(format: 'csv' | 'json', preferredSourceId?: string, mode: 'all' | 'intra_source' | 'multi_source' = 'all'): string {
+  public static async trashDuplicateFiles(fileIds: string[], keepFileIds?: string[]) {
+    return this.request<{
+      trashed_count: number;
+      trashed_bytes: number;
+      items: any[];
+      errors: any[];
+    }>('/duplicates/trash', {
+      method: 'POST',
+      body: JSON.stringify({ file_ids: fileIds, keep_file_ids: keepFileIds })
+    });
+  }
+
+  public static async getTrashedFiles(sourceId?: string) {
+    const q = sourceId ? `?source_id=${encodeURIComponent(sourceId)}` : '';
+    return this.request<{
+      total_count: number;
+      total_bytes: number;
+      by_source: Array<{
+        source_id: string;
+        source_name: string;
+        root_path?: string;
+        trash_folder_path?: string;
+        is_online: boolean;
+        count: number;
+        bytes: number;
+      }>;
+      items: Array<{
+        file_id: string;
+        media_id: string;
+        source_id: string;
+        source_name: string;
+        is_source_online: boolean;
+        filename: string;
+        original_relative_path: string;
+        trash_relative_path: string;
+        size_bytes: number;
+        sha256: string;
+        trashed_at?: string;
+        has_thumbnail: boolean;
+      }>;
+    }>(`/duplicates/trash${q}`);
+  }
+
+  public static async restoreTrashedFiles(fileIds: string[]) {
+    return this.request<{
+      restored_count: number;
+      restored_bytes: number;
+      items: any[];
+      errors: any[];
+    }>('/duplicates/trash/restore', {
+      method: 'POST',
+      body: JSON.stringify({ file_ids: fileIds })
+    });
+  }
+
+  public static getDuplicateExportUrl(
+    format: 'csv' | 'json',
+    preferredSourceId?: string,
+    mode: 'all' | 'intra_source' | 'multi_source' = 'all',
+    sortBy: string = 'size_desc'
+  ): string {
     const token = this.getToken();
-    let url = `${API_BASE}/duplicates/export?format=${format}&mode=${mode}`;
+    let url = `${API_BASE}/duplicates/export?format=${format}&mode=${mode}&sort_by=${encodeURIComponent(sortBy)}`;
     if (preferredSourceId) {
       url += `&preferred_source_id=${encodeURIComponent(preferredSourceId)}`;
     }
@@ -516,4 +596,214 @@ export class ApiClient {
       method: 'POST'
     });
   }
+
+  // AI Advisor & Smart Curation
+  public static async getAISettings(): Promise<AISettingsData> {
+    return this.request<AISettingsData>('/ai/settings');
+  }
+
+  public static async updateAISettings(payload: AISettingsUpdatePayload): Promise<AISettingsData> {
+    return this.request<AISettingsData>('/ai/settings', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  public static async getAIModels(params?: { provider_name?: string; api_key?: string; ollama_base_url?: string }): Promise<AIModelItem[]> {
+    const searchParams = new URLSearchParams();
+    if (params?.provider_name) searchParams.append('provider_name', params.provider_name);
+    if (params?.api_key) searchParams.append('api_key', params.api_key);
+    if (params?.ollama_base_url) searchParams.append('ollama_base_url', params.ollama_base_url);
+    const qs = searchParams.toString();
+    return this.request<AIModelItem[]>(`/ai/models${qs ? `?${qs}` : ''}`);
+  }
+
+  public static async testAI(payload?: { provider?: string; api_key?: string; model?: string; ollama_base_url?: string }): Promise<AITestResult> {
+    return this.request<AITestResult>('/ai/test', {
+      method: 'POST',
+      body: payload ? JSON.stringify(payload) : undefined
+    });
+  }
+
+  public static async suggestKeepCopies(mediaIds: string[], preferredSourceId?: string): Promise<DuplicateKeepSuggestion[]> {
+    return this.request<DuplicateKeepSuggestion[]>('/ai/duplicates/suggest-keep', {
+      method: 'POST',
+      body: JSON.stringify({ media_ids: mediaIds, preferred_source_id: preferredSourceId })
+    });
+  }
+
+  public static async analyzeFolderAdvisor(sourceId?: string, useAi = true): Promise<FolderAdvisorAnalysisResult> {
+    return this.request<FolderAdvisorAnalysisResult>('/ai/folder-advisor/analyze', {
+      method: 'POST',
+      body: JSON.stringify({ source_id: sourceId, use_ai: useAi })
+    });
+  }
+
+  public static async previewFolderRule(sourceId: string, keepFolder: string, trashFolder: string): Promise<FolderRulePreview> {
+    return this.request<FolderRulePreview>('/ai/folder-advisor/preview', {
+      method: 'POST',
+      body: JSON.stringify({ source_id: sourceId, keep_folder: keepFolder, trash_folder: trashFolder })
+    });
+  }
+
+  public static async suggestBestShot(mediaIds: string[], useAi = true): Promise<BestShotResult> {
+    return this.request<BestShotResult>('/ai/similar/best-shot', {
+      method: 'POST',
+      body: JSON.stringify({ media_ids: mediaIds, use_ai: useAi })
+    });
+  }
+
+  public static async trashSimilarMedia(keepMediaId: string, trashMediaIds: string[], maxDistance = 10): Promise<any> {
+    return this.request<any>('/duplicates/trash-similar', {
+      method: 'POST',
+      body: JSON.stringify({
+        keep_media_id: keepMediaId,
+        trash_media_ids: trashMediaIds,
+        max_distance: maxDistance
+      })
+    });
+  }
+
+  public static async suggestSmartAlbums(useAi = true, minMedia = 15): Promise<SmartAlbumSuggestResult> {
+    return this.request<SmartAlbumSuggestResult>('/ai/smart-albums/suggest', {
+      method: 'POST',
+      body: JSON.stringify({ use_ai: useAi, min_media: minMedia })
+    });
+  }
+
+  public static async createSmartAlbum(payload: {
+    event_id: string;
+    name: string;
+    description?: string;
+    tags?: string[];
+  }): Promise<{ album_id: string; added_count: number; tags_applied: number }> {
+    return this.request<{ album_id: string; added_count: number; tags_applied: number }>('/ai/smart-albums/create', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
 }
+
+export interface AISettingsData {
+  provider: 'none' | 'gemini' | 'ollama';
+  model_text?: string | null;
+  model_vision?: string | null;
+  has_api_key: boolean;
+  api_key_hint?: string | null;
+  api_key_from_env: boolean;
+  ollama_base_url?: string | null;
+  allow_cloud_images: boolean;
+  daily_request_cap: number;
+  usage_today: {
+    requests: number;
+    input_tokens: number;
+    output_tokens: number;
+  };
+}
+
+export interface AISettingsUpdatePayload {
+  provider?: string;
+  model_text?: string | null;
+  model_vision?: string | null;
+  api_key?: string | null;
+  ollama_base_url?: string | null;
+  allow_cloud_images?: boolean;
+  daily_request_cap?: number;
+}
+
+export interface AIModelItem {
+  id: string;
+  display_name: string;
+  input_token_limit?: number;
+}
+
+export interface AITestResult {
+  ok: boolean;
+  provider?: string;
+  model?: string;
+  latency_ms?: number;
+  error?: string;
+}
+
+export interface DuplicateKeepSuggestion {
+  media_id: string;
+  engine: string;
+  keep_file_ids: string[];
+  trash_file_ids: string[];
+  skipped_offline_file_ids: string[];
+  scores: Record<string, number>;
+  reasons: Record<string, string>;
+  confidence: number;
+}
+
+export interface FolderPairInfo {
+  pair_id: string;
+  source_id: string;
+  source_name: string;
+  dir_a: { path: string; total_files: number; path_score: number };
+  dir_b: { path: string; total_files: number; path_score: number };
+  shared_media_count: number;
+  shared_bytes: number;
+}
+
+export interface FolderRule {
+  pair_id: string;
+  keep_folder: string;
+  trash_folder: string;
+  rationale: string;
+  confidence: number;
+  engine: string;
+}
+
+export interface FolderAdvisorAnalysisResult {
+  engine_used: string;
+  ai_error?: string | null;
+  pairs: FolderPairInfo[];
+  rules: FolderRule[];
+}
+
+export interface FolderRulePreview {
+  file_ids: string[];
+  keep_file_ids: string[];
+  count: number;
+  bytes: number;
+  sample: {
+    file_id: string;
+    filename: string;
+    relative_path: string;
+    size_bytes: number;
+    media_id: string;
+    has_thumbnail: boolean;
+  }[];
+}
+
+export interface BestShotResult {
+  engine: string;
+  ai_error?: string | null;
+  best_media_id: string;
+  keep_media_ids: string[];
+  trash_media_ids: string[];
+  reasons: Record<string, string>;
+  summary: string;
+  heuristic_scores?: Record<string, any>;
+}
+
+export interface SmartAlbumEvent {
+  event_id: string;
+  start: string;
+  end: string;
+  media_count: number;
+  top_places: { place_name: string; count: number }[];
+  top_folders: { folder: string; count: number }[];
+  cover_media_id: string;
+  suggested_name: string;
+  suggested_description: string;
+  suggested_tags: string[];
+}
+
+export interface SmartAlbumSuggestResult {
+  engine: string;
+  ai_error?: string | null;
+  events: SmartAlbumEvent[];
+}
+
