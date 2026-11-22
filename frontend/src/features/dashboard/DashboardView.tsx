@@ -212,7 +212,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
         gap: '16px'
       }}>
         <div
-          onClick={() => onNavigate('photos')}
+          onClick={() => onNavigate('library')}
           style={{
             background: '#1e293b',
             border: '1px solid #334155',
@@ -354,7 +354,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
         gap: '12px'
       }}>
         <div
-          onClick={() => onNavigate('photos')}
+          onClick={() => onNavigate('library')}
           style={{
             background: '#0f172a',
             border: '1px solid #334155',
@@ -378,7 +378,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
         </div>
 
         <div
-          onClick={() => onNavigate('photos')}
+          onClick={() => onNavigate('library')}
           style={{
             background: '#0f172a',
             border: '1px solid #334155',
@@ -424,7 +424,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
         </div>
 
         <div
-          onClick={() => onNavigate('photos')}
+          onClick={() => onNavigate('library')}
           style={{
             background: '#0f172a',
             border: '1px solid #334155',

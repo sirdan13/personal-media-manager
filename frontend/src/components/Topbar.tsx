@@ -17,8 +17,8 @@ export const Topbar: React.FC<TopbarProps> = ({
   const getTabTitle = (tab: string) => {
     switch (tab) {
       case 'dashboard': return 'Dashboard';
-      case 'library': return 'Libreria';
-      case 'photos': return 'Foto';
+      case 'library':
+      case 'photos': return 'Libreria';
       case 'videos': return 'Video';
       case 'favorites': return 'Preferiti';
       case 'albums': return 'Album & Tag';

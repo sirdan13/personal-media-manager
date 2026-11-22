@@ -12,7 +12,7 @@ import { SettingsView } from './features/settings/SettingsView';
 import { MapView } from './features/map/MapView';
 import { AlbumsView } from './features/albums/AlbumsView';
 import { TutorialModal } from './components/TutorialModal';
-import { Grid, Image as ImageIcon, Heart, MapPin, LayoutDashboard } from 'lucide-react';
+import { Grid, Heart, MapPin, LayoutDashboard } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<any | null>(null);
@@ -115,7 +115,7 @@ export const App: React.FC = () => {
           onToggleMobileSidebar={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
         />
 
-        <main className="main-content-layout" style={{ flex: 1, padding: '32px', overflowY: 'auto' }}>
+        <main className="main-content-layout" style={{ flex: 1, padding: '32px', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
           {currentTab === 'dashboard' && (
             <DashboardView
               onNavigate={setCurrentTab}
@@ -124,21 +124,9 @@ export const App: React.FC = () => {
             />
           )}
 
-          {currentTab === 'library' && (
+          {(currentTab === 'library' || currentTab === 'photos') && (
             <LibraryView
               initialType="all"
-              initialGeoFilter={geoFilter}
-              initialAlbumId={selectedAlbumId}
-              initialTagId={selectedTagId}
-              onClearGeoFilter={() => setGeoFilter(null)}
-              onClearAlbumFilter={() => setSelectedAlbumId(null)}
-              onClearTagFilter={() => setSelectedTagId(null)}
-            />
-          )}
-
-          {currentTab === 'photos' && (
-            <LibraryView
-              initialType="image"
               initialGeoFilter={geoFilter}
               initialAlbumId={selectedAlbumId}
               initialTagId={selectedTagId}
@@ -239,31 +227,13 @@ export const App: React.FC = () => {
             flexDirection: 'column',
             alignItems: 'center',
             gap: '3px',
-            color: currentTab === 'library' ? '#38bdf8' : '#94a3b8',
+            color: currentTab === 'library' || currentTab === 'photos' ? '#38bdf8' : '#94a3b8',
             fontSize: '11px',
             fontWeight: 600
           }}
         >
           <Grid size={18} />
           Libreria
-        </button>
-
-        <button
-          onClick={() => setCurrentTab('photos')}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '3px',
-            color: currentTab === 'photos' ? '#38bdf8' : '#94a3b8',
-            fontSize: '11px',
-            fontWeight: 600
-          }}
-        >
-          <ImageIcon size={18} />
-          Foto
         </button>
 
         <button

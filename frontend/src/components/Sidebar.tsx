@@ -2,7 +2,6 @@ import React from 'react';
 import {
   LayoutDashboard,
   Grid,
-  Image,
   Video,
   Copy,
   HardDrive,
@@ -34,7 +33,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const menuItems: Array<{ id: string; label: string; icon: any; color?: string; badge?: string }> = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'library', label: 'Libreria', icon: Grid },
-    { id: 'photos', label: 'Fotografie', icon: Image },
     { id: 'videos', label: 'Video', icon: Video },
     { id: 'favorites', label: 'Preferiti', icon: Heart, color: '#f43f5e' },
     { id: 'albums', label: 'Album & Tag', icon: Folder },

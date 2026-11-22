@@ -93,6 +93,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     startY: number;
     isSelecting: boolean;
     initialSelected: Set<string>;
+    isCardClick: boolean;
   } | null>(null);
   const [marqueeBox, setMarqueeBox] = useState<{
     left: number;
@@ -238,16 +239,18 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   const handleGridMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
     const target = e.target as HTMLElement;
-    if (target.closest('button, input, select, textarea, a, .media-card-checkbox, .media-card-favorite, .floating-batch-bar, .context-menu-popup')) {
+    if (target.closest('button, input, select, textarea, a, .media-card-checkbox, .media-card-favorite, .floating-batch-bar, .context-menu-popup, .filter-bar-container, .timeline-quick-jump')) {
       return;
     }
     hasDraggedRef.current = false;
     const isModifier = e.shiftKey || e.metaKey || e.ctrlKey;
+    const isCard = Boolean(target.closest('[data-media-id]'));
     marqueeRef.current = {
       startX: e.clientX,
       startY: e.clientY,
       isSelecting: false,
-      initialSelected: isModifier ? new Set(selectedIds) : new Set()
+      initialSelected: isModifier ? new Set(selectedIds) : new Set(),
+      isCardClick: isCard
     };
   };
 
@@ -317,11 +320,18 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     };
 
     const handleMouseUp = () => {
-      if (marqueeRef.current?.isSelecting) {
-        hasDraggedRef.current = true;
-        setTimeout(() => {
-          hasDraggedRef.current = false;
-        }, 100);
+      if (marqueeRef.current) {
+        if (marqueeRef.current.isSelecting) {
+          hasDraggedRef.current = true;
+          setTimeout(() => {
+            hasDraggedRef.current = false;
+          }, 100);
+        } else if (!marqueeRef.current.isCardClick) {
+          // Deselect on simple background click when no modifier was held
+          if (marqueeRef.current.initialSelected.size === 0) {
+            setSelectedIds(new Set());
+          }
+        }
       }
       marqueeRef.current = null;
       setMarqueeBox(null);
@@ -617,7 +627,17 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    <div
+      onMouseDown={handleGridMouseDown}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '20px',
+        minHeight: '100%',
+        flex: 1,
+        userSelect: marqueeBox ? 'none' : 'auto'
+      }}
+    >
       {/* Active Geo Filter Pill if coming from Map */}
       {geoFilter && (
         <div style={{
@@ -1276,8 +1296,12 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       {/* Main Content Area */}
       <div
         ref={gridContainerRef}
-        onMouseDown={handleGridMouseDown}
-        style={{ position: 'relative', userSelect: marqueeBox ? 'none' : 'auto' }}
+        style={{
+          position: 'relative',
+          flex: 1,
+          minHeight: '400px',
+          userSelect: marqueeBox ? 'none' : 'auto'
+        }}
       >
         {mediaList.length === 0 && !loading ? (
           <div style={{
