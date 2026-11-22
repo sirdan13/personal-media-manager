@@ -88,13 +88,19 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   } | null>(null);
 
   // Marquee drag-selection state
-  const [marquee, setMarquee] = useState<{
+  const marqueeRef = React.useRef<{
     startX: number;
     startY: number;
-    currentX: number;
-    currentY: number;
     isSelecting: boolean;
+    initialSelected: Set<string>;
   } | null>(null);
+  const [marqueeBox, setMarqueeBox] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const hasDraggedRef = React.useRef<boolean>(false);
   const gridContainerRef = React.useRef<HTMLDivElement>(null);
 
   // Sync initialType and geoFilter when props change
@@ -235,13 +241,14 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     if (target.closest('button, input, select, textarea, a, .media-card-checkbox, .media-card-favorite, .floating-batch-bar, .context-menu-popup')) {
       return;
     }
-    setMarquee({
+    hasDraggedRef.current = false;
+    const isModifier = e.shiftKey || e.metaKey || e.ctrlKey;
+    marqueeRef.current = {
       startX: e.clientX,
       startY: e.clientY,
-      currentX: e.clientX,
-      currentY: e.clientY,
-      isSelecting: false
-    });
+      isSelecting: false,
+      initialSelected: isModifier ? new Set(selectedIds) : new Set()
+    };
   };
 
   // Close context menu on outside clicks / scroll / Escape
@@ -263,58 +270,78 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
   // Global Marquee drag-selection
   useEffect(() => {
-    if (!marquee) return;
-
     const handleMouseMove = (e: MouseEvent) => {
-      const dist = Math.hypot(e.clientX - marquee.startX, e.clientY - marquee.startY);
-      const isSelecting = marquee.isSelecting || dist > 6;
+      if (!marqueeRef.current) return;
+      const { startX, startY, isSelecting, initialSelected } = marqueeRef.current;
+      const dist = Math.hypot(e.clientX - startX, e.clientY - startY);
 
-      setMarquee((prev) => prev ? {
-        ...prev,
-        currentX: e.clientX,
-        currentY: e.clientY,
-        isSelecting
-      } : null);
-
-      if (isSelecting) {
-        const boxLeft = Math.min(marquee.startX, e.clientX);
-        const boxTop = Math.min(marquee.startY, e.clientY);
-        const boxRight = Math.max(marquee.startX, e.clientX);
-        const boxBottom = Math.max(marquee.startY, e.clientY);
-
-        const cards = document.querySelectorAll('[data-media-id]');
-        const newSelected = new Set(e.shiftKey || e.metaKey || e.ctrlKey ? selectedIds : []);
-
-        cards.forEach((card) => {
-          const id = card.getAttribute('data-media-id');
-          if (!id) return;
-          const rect = card.getBoundingClientRect();
-          const intersects = !(
-            rect.right < boxLeft ||
-            rect.left > boxRight ||
-            rect.bottom < boxTop ||
-            rect.top > boxBottom
-          );
-          if (intersects) {
-            newSelected.add(id);
-          }
-        });
-
-        setSelectedIds(newSelected);
+      if (!isSelecting && dist < 6) {
+        return;
       }
+
+      e.preventDefault();
+      marqueeRef.current.isSelecting = true;
+      hasDraggedRef.current = true;
+
+      const boxLeft = Math.min(startX, e.clientX);
+      const boxTop = Math.min(startY, e.clientY);
+      const boxRight = Math.max(startX, e.clientX);
+      const boxBottom = Math.max(startY, e.clientY);
+
+      setMarqueeBox({
+        left: boxLeft,
+        top: boxTop,
+        width: boxRight - boxLeft,
+        height: boxBottom - boxTop
+      });
+
+      const cards = document.querySelectorAll('[data-media-id]');
+      const currentSelection = new Set(initialSelected);
+
+      cards.forEach((card) => {
+        const id = card.getAttribute('data-media-id');
+        if (!id) return;
+        const rect = card.getBoundingClientRect();
+        const intersects = !(
+          rect.right < boxLeft ||
+          rect.left > boxRight ||
+          rect.bottom < boxTop ||
+          rect.top > boxBottom
+        );
+        if (intersects) {
+          currentSelection.add(id);
+        }
+      });
+
+      setSelectedIds(currentSelection);
     };
 
     const handleMouseUp = () => {
-      setMarquee(null);
+      if (marqueeRef.current?.isSelecting) {
+        hasDraggedRef.current = true;
+        setTimeout(() => {
+          hasDraggedRef.current = false;
+        }, 100);
+      }
+      marqueeRef.current = null;
+      setMarqueeBox(null);
     };
 
-    window.addEventListener('mousemove', handleMouseMove);
+    const handleDragStart = (e: DragEvent) => {
+      if (marqueeRef.current?.isSelecting) {
+        e.preventDefault();
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove, { passive: false });
     window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('dragstart', handleDragStart);
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('dragstart', handleDragStart);
     };
-  }, [marquee, selectedIds]);
+  }, []);
 
   const handleSelectAll = () => {
     if (selectedIds.size === mediaList.length) {
@@ -400,9 +427,10 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     <div
       key={media.id}
       data-media-id={media.id}
+      draggable={false}
       onClick={(e) => {
-        if (marquee?.isSelecting) return;
-        if (e.shiftKey || e.metaKey || e.ctrlKey || selectedIds.size > 0 || isSelectionMode) {
+        if (hasDraggedRef.current || marqueeRef.current?.isSelecting) return;
+        if (e.shiftKey || e.metaKey || e.ctrlKey || isSelectionMode) {
           handleToggleSelect(e, media.id);
         } else {
           setSelectedMediaId(media.id);
@@ -447,7 +475,8 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         alignItems: 'center',
         justifyContent: 'center',
         position: 'relative',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        userSelect: 'none'
       }}>
         {isHoveredLive && liveVideoId ? (
           <video
@@ -467,10 +496,14 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             src={ApiClient.getThumbnailUrl(media.id)}
             alt={media.primary_filename || 'Thumbnail'}
             loading="lazy"
+            draggable={false}
+            onDragStart={(e) => e.preventDefault()}
             style={{
               width: '100%',
               height: '100%',
-              objectFit: 'cover'
+              objectFit: 'cover',
+              userSelect: 'none',
+              pointerEvents: 'none'
             }}
           />
         ) : (
@@ -1016,22 +1049,26 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         </div>
       </div>
 
-      {/* Floating Batch Action Bar */}
+      {/* Floating Batch Action Bar: Fixed overlay floating at bottom, ZERO layout shift */}
       {selectedIds.size > 0 && (
         <div className="floating-batch-bar" style={{
-          position: 'sticky',
-          top: '16px',
-          zIndex: 90,
-          background: '#0f172a',
+          position: 'fixed',
+          bottom: '24px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 900,
+          background: 'rgba(15, 23, 42, 0.96)',
+          backdropFilter: 'blur(12px)',
           border: '1px solid #0284c7',
-          borderRadius: '12px',
-          padding: '12px 20px',
+          borderRadius: '16px',
+          padding: '10px 20px',
           display: 'flex',
           flexWrap: 'wrap',
           alignItems: 'center',
-          justifyContent: 'space-between',
+          justifyContent: 'center',
           gap: '12px',
-          boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
+          boxShadow: '0 20px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(56, 189, 248, 0.25)',
+          animation: 'slideUpBar 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <span style={{ fontSize: '13px', fontWeight: 700, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -1240,7 +1277,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       <div
         ref={gridContainerRef}
         onMouseDown={handleGridMouseDown}
-        style={{ position: 'relative', userSelect: marquee?.isSelecting ? 'none' : 'auto' }}
+        style={{ position: 'relative', userSelect: marqueeBox ? 'none' : 'auto' }}
       >
         {mediaList.length === 0 && !loading ? (
           <div style={{
@@ -1299,15 +1336,15 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       </div>
 
       {/* Marquee Rubber-Band Selection Rectangle */}
-      {marquee && marquee.isSelecting && (
+      {marqueeBox && (
         <div
           style={{
             position: 'fixed',
-            left: Math.min(marquee.startX, marquee.currentX),
-            top: Math.min(marquee.startY, marquee.currentY),
-            width: Math.abs(marquee.currentX - marquee.startX),
-            height: Math.abs(marquee.currentY - marquee.startY),
-            background: 'rgba(56, 189, 248, 0.16)',
+            left: marqueeBox.left,
+            top: marqueeBox.top,
+            width: marqueeBox.width,
+            height: marqueeBox.height,
+            background: 'rgba(56, 189, 248, 0.18)',
             border: '1.5px solid #38bdf8',
             borderRadius: '4px',
             pointerEvents: 'none',
