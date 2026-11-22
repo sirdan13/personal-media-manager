@@ -189,7 +189,7 @@ def get_thumbnail(
         path=full_path,
         media_type=f"image/{thumb.format}",
         filename=f"{thumb.media_id[:12]}.{thumb.format}",
-        headers={"Cache-Control": "private, max-age=604800"}
+        headers={"Cache-Control": "private, max-age=60, must-revalidate"}
     )
 
 @router.get("/{media_id}/stream")

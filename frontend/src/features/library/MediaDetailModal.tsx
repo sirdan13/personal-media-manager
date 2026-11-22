@@ -116,6 +116,9 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
           ApiClient.getTags().catch(() => [])
         ]);
         setData(detail);
+        if (detail?.files?.some((f: any) => f.source_status === 'online') && detail.media_type === 'image') {
+          setLoadHd(true);
+        }
         setAvailableAlbums(albums);
         setAvailableTags(tags);
       } catch (err) {
@@ -283,14 +286,13 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
         border: '1px solid #334155',
         borderRadius: '16px',
         width: '92vw',
-        maxWidth: loadHd ? '1140px' : '840px',
-        height: loadHd ? '86vh' : 'auto',
-        maxHeight: loadHd ? '880px' : '78vh',
+        maxWidth: '1060px',
+        height: '84vh',
+        maxHeight: '820px',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
-        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
-        transition: 'max-width 0.25s cubic-bezier(0.16, 1, 0.3, 1), max-height 0.25s cubic-bezier(0.16, 1, 0.3, 1), height 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
+        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)'
       }}>
         {/* Header */}
         <div style={{
@@ -434,6 +436,7 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
           <div className="modal-pane-left" style={{
             flex: '1 1 0',
             minWidth: 0,
+            height: '100%',
             background: '#090d16',
             display: 'flex',
             flexDirection: 'column',
@@ -543,10 +546,11 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
                   flex: 1,
                   width: '100%',
                   height: '100%',
-                  minHeight: loadHd ? '380px' : '260px',
+                  minHeight: 0,
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center'
+                  justifyContent: 'center',
+                  padding: '12px'
                 }}>
                   <img
                     src={loadHd ? ApiClient.getMediaPreviewUrl(data.id) : ApiClient.getThumbnailUrl(data.id)}
@@ -558,14 +562,13 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
                       }
                     }}
                     style={{
+                      width: '100%',
+                      height: '100%',
                       maxWidth: '100%',
-                      maxHeight: loadHd ? 'calc(86vh - 130px)' : '360px',
-                      width: 'auto',
-                      height: 'auto',
+                      maxHeight: '100%',
                       objectFit: 'contain',
                       borderRadius: '8px',
-                      boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-                      transition: 'max-height 0.25s ease'
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.5)'
                     }}
                   />
                 </div>
