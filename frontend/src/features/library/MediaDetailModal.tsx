@@ -282,9 +282,10 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
         background: '#1e293b',
         border: '1px solid #334155',
         borderRadius: '16px',
-        width: '100%',
-        maxWidth: '960px',
-        maxHeight: '90vh',
+        width: '95vw',
+        maxWidth: '1240px',
+        height: '88vh',
+        maxHeight: '920px',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -421,17 +422,26 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
         </div>
 
         {/* Modal Body */}
-        <div style={{ display: 'flex', flex: 1, overflowY: 'auto', flexWrap: 'wrap' }}>
+        <div className="modal-body-container" style={{
+          display: 'flex',
+          flex: 1,
+          minHeight: 0,
+          overflow: 'hidden',
+          flexDirection: 'row'
+        }}>
           {/* Left Preview Pane */}
           <div className="modal-pane-left" style={{
-            flex: '1 1 450px',
+            flex: '1 1 0',
+            minWidth: 0,
+            height: '100%',
             background: '#090d16',
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            minHeight: '360px',
-            padding: '20px',
-            position: 'relative'
+            padding: '20px 24px 64px',
+            position: 'relative',
+            overflow: 'hidden'
           }}>
             {/* Prev Button */}
             {hasPrev && onPrev && (
@@ -500,7 +510,7 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
                   src={ApiClient.getMediaStreamUrl(targetVideoMediaId)}
                   onError={() => setStreamError('Disco sorgente offline o file non accessibile dal server')}
                   style={{
-                    maxHeight: '400px',
+                    maxHeight: '100%',
                     maxWidth: '100%',
                     borderRadius: '8px',
                     boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
@@ -529,23 +539,35 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
               </div>
             ) : data?.has_thumbnail ? (
               <>
-                <img
-                  src={loadHd ? ApiClient.getMediaPreviewUrl(data.id) : ApiClient.getThumbnailUrl(data.id)}
-                  alt={primaryFile?.filename || 'Media'}
-                  onError={() => {
-                    if (loadHd) {
-                      setHdError('Disco offline o anteprima HD non disponibile.');
-                      setLoadHd(false);
-                    }
-                  }}
-                  style={{
-                    maxHeight: '440px',
-                    maxWidth: '100%',
-                    objectFit: 'contain',
-                    borderRadius: '8px',
-                    boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
-                  }}
-                />
+                <div style={{
+                  flex: 1,
+                  width: '100%',
+                  height: '100%',
+                  minHeight: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <img
+                    src={loadHd ? ApiClient.getMediaPreviewUrl(data.id) : ApiClient.getThumbnailUrl(data.id)}
+                    alt={primaryFile?.filename || 'Media'}
+                    onError={() => {
+                      if (loadHd) {
+                        setHdError('Disco offline o anteprima HD non disponibile.');
+                        setLoadHd(false);
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      maxWidth: '100%',
+                      maxHeight: '100%',
+                      objectFit: 'contain',
+                      borderRadius: '8px',
+                      boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
+                    }}
+                  />
+                </div>
 
                 {hdError && (
                   <div style={{
@@ -556,7 +578,8 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
                     padding: '4px 10px',
                     borderRadius: '4px',
                     fontSize: '11px',
-                    fontWeight: 600
+                    fontWeight: 600,
+                    zIndex: 10
                   }}>
                     {hdError}
                   </div>
@@ -700,7 +723,19 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
           </div>
 
           {/* Right Information Pane */}
-          <div className="modal-pane-right" style={{ flex: '1 1 380px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div className="modal-pane-right" style={{
+            width: '380px',
+            minWidth: '340px',
+            flexShrink: 0,
+            height: '100%',
+            overflowY: 'auto',
+            padding: '20px 24px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+            borderLeft: '1px solid #334155',
+            background: '#1e293b'
+          }}>
             {loading && <div style={{ color: '#94a3b8' }}>Caricamento metadati...</div>}
             {error && <div style={{ color: '#f43f5e' }}>{error}</div>}
 

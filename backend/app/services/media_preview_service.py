@@ -181,7 +181,8 @@ def generate_image_preview_bytes(
             metadata["has_xmp_sidecar"] = True
             break
 
-    # 1. Try direct Pillow open
+    # 1. Read EXIF metadata from direct image open if possible (TIFF/EXIF headers)
+    direct = None
     try:
         direct = Image.open(filepath)
         metadata_exif, cap_exif, lat_exif, lon_exif = extract_exif_dict(direct)
@@ -191,43 +192,55 @@ def generate_image_preview_bytes(
         if lat_exif is not None and lon_exif is not None:
             metadata["latitude"] = lat_exif
             metadata["longitude"] = lon_exif
-        img = direct
     except Exception:
-        img = None
+        direct = None
 
-    # 2. If RAW, try embedded preview extraction
-    if img is None and ext in RAW_EXTENSIONS:
+    # 2. Extract image pixel buffer
+    if ext in RAW_EXTENSIONS:
+        # For RAW files, prefer high-res embedded preview JPEG or sips over Pillow's IFD0 thumbnail
         raw_jpeg = extract_largest_embedded_jpeg(filepath)
         if raw_jpeg:
             try:
                 emb = Image.open(io.BytesIO(raw_jpeg))
-                metadata_exif, cap_exif, lat_exif, lon_exif = extract_exif_dict(emb)
-                metadata.update(metadata_exif)
-                if cap_exif:
-                    captured_at = cap_exif
+                emb.load()
+                meta_emb, cap_emb, lat_emb, lon_emb = extract_exif_dict(emb)
+                for k, v in meta_emb.items():
+                    if k not in metadata:
+                        metadata[k] = v
+                if not captured_at and cap_emb:
+                    captured_at = cap_emb
+                if "latitude" not in metadata and lat_emb is not None:
+                    metadata["latitude"] = lat_emb
+                    metadata["longitude"] = lon_emb
                 img = emb
             except Exception:
                 img = None
 
-    # 3. Fallback on macOS via sips
-    if img is None and sys.platform == "darwin" and shutil.which("sips"):
-        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_f:
-            tmp_jpg = tmp_f.name
-        try:
-            cmd = ["sips", "-s", "format", "jpeg", "-Z", str(max_edge), filepath, "--out", tmp_jpg]
-            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
-            if res.returncode == 0 and os.path.isfile(tmp_jpg) and os.path.getsize(tmp_jpg) > 0:
-                sips_img = Image.open(tmp_jpg)
-                sips_img.load()
-                img = sips_img
-        except Exception:
-            pass
-        finally:
-            if os.path.isfile(tmp_jpg):
-                try:
-                    os.remove(tmp_jpg)
-                except OSError:
-                    pass
+        if img is None and sys.platform == "darwin" and shutil.which("sips"):
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_f:
+                tmp_jpg = tmp_f.name
+            try:
+                cmd = ["sips", "-s", "format", "jpeg", "-Z", str(max_edge), filepath, "--out", tmp_jpg]
+                res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+                if res.returncode == 0 and os.path.isfile(tmp_jpg) and os.path.getsize(tmp_jpg) > 0:
+                    sips_img = Image.open(tmp_jpg)
+                    sips_img.load()
+                    img = sips_img
+            except Exception:
+                pass
+            finally:
+                if os.path.isfile(tmp_jpg):
+                    try:
+                        os.remove(tmp_jpg)
+                    except OSError:
+                        pass
+
+        # Fallback to direct Pillow open if neither embedded preview nor sips succeeded
+        if img is None:
+            img = direct
+    else:
+        # Standard images (JPEG, PNG, HEIC, etc.)
+        img = direct
 
     if img is None:
         return None, None, None, metadata, captured_at
