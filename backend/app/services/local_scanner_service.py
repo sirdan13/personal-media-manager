@@ -216,7 +216,7 @@ def _run_server_scan_worker(
 
                 if ext in IMAGE_EXTENSIONS:
                     t_bytes, w, h, meta_json, captured_at = generate_image_preview_bytes(
-                        full_path, max_edge=384, quality=70, fmt="WEBP"
+                        full_path, max_edge=512, quality=75, fmt="WEBP"
                     )
                     if t_bytes:
                         thumb_b64 = base64.b64encode(t_bytes).decode("ascii")

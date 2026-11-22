@@ -159,6 +159,32 @@ def get_thumbnail(
         if not found:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File miniatura non presente su disco")
 
+    # Seamless upgrade for low-res legacy thumbnails (e.g. <= 200px) when a source disk is online
+    if thumb.width <= 200 or thumb.height <= 200:
+        try:
+            files = db.query(File, Source).join(Source, File.source_id == Source.id)\
+                      .filter(File.media_id == media_id, Source.user_id == current_user.id).all()
+            for f, s in files:
+                if s.root_path:
+                    safe_path = resolve_safe_source_file(s.root_path, f.relative_path)
+                    if safe_path:
+                        from app.services.media_preview_service import generate_image_preview_bytes
+                        new_bytes, new_w, new_h, _, _ = generate_image_preview_bytes(
+                            safe_path, max_edge=512, quality=75, fmt="WEBP"
+                        )
+                        if new_bytes and new_w and new_h and (new_w > thumb.width or new_h > thumb.height):
+                            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                            with open(full_path, "wb") as f_out:
+                                f_out.write(new_bytes)
+                            thumb.width = new_w
+                            thumb.height = new_h
+                            thumb.size_bytes = len(new_bytes)
+                            thumb.format = "webp"
+                            db.commit()
+                            break
+        except Exception:
+            db.rollback()
+
     return FileResponse(
         path=full_path,
         media_type=f"image/{thumb.format}",

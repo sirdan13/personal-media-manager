@@ -282,14 +282,15 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
         background: '#1e293b',
         border: '1px solid #334155',
         borderRadius: '16px',
-        width: '95vw',
-        maxWidth: '1240px',
-        height: '88vh',
-        maxHeight: '920px',
+        width: '92vw',
+        maxWidth: loadHd ? '1140px' : '840px',
+        height: loadHd ? '86vh' : 'auto',
+        maxHeight: loadHd ? '880px' : '78vh',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
-        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)'
+        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
+        transition: 'max-width 0.25s cubic-bezier(0.16, 1, 0.3, 1), max-height 0.25s cubic-bezier(0.16, 1, 0.3, 1), height 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
       }}>
         {/* Header */}
         <div style={{
@@ -433,13 +434,12 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
           <div className="modal-pane-left" style={{
             flex: '1 1 0',
             minWidth: 0,
-            height: '100%',
             background: '#090d16',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            padding: '20px 24px 64px',
+            padding: '16px 20px 56px',
             position: 'relative',
             overflow: 'hidden'
           }}>
@@ -543,7 +543,7 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
                   flex: 1,
                   width: '100%',
                   height: '100%',
-                  minHeight: 0,
+                  minHeight: loadHd ? '380px' : '260px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center'
@@ -558,13 +558,14 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
                       }
                     }}
                     style={{
-                      width: '100%',
-                      height: '100%',
                       maxWidth: '100%',
-                      maxHeight: '100%',
+                      maxHeight: loadHd ? 'calc(86vh - 130px)' : '360px',
+                      width: 'auto',
+                      height: 'auto',
                       objectFit: 'contain',
                       borderRadius: '8px',
-                      boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                      transition: 'max-height 0.25s ease'
                     }}
                   />
                 </div>
@@ -724,15 +725,15 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
 
           {/* Right Information Pane */}
           <div className="modal-pane-right" style={{
-            width: '380px',
-            minWidth: '340px',
+            width: '360px',
+            minWidth: '320px',
             flexShrink: 0,
             height: '100%',
             overflowY: 'auto',
-            padding: '20px 24px',
+            padding: '18px 20px',
             display: 'flex',
             flexDirection: 'column',
-            gap: '16px',
+            gap: '14px',
             borderLeft: '1px solid #334155',
             background: '#1e293b'
           }}>
