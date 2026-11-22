@@ -3,7 +3,6 @@ import { ApiClient } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 import {
   X,
-  Calendar,
   Camera,
   MapPin,
   HardDrive,
@@ -21,7 +20,9 @@ import {
   Sparkles,
   ShieldCheck,
   AlertTriangle,
-  ShieldAlert
+  ShieldAlert,
+  Copy,
+  Check
 } from 'lucide-react';
 
 interface MediaDetailModalProps {
@@ -63,6 +64,8 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
   // Finder reveal state
   const [revealingFileId, setRevealingFileId] = useState<string | null>(null);
   const [isRevealingPrimary, setIsRevealingPrimary] = useState<boolean>(false);
+  const [copiedSha, setCopiedSha] = useState<boolean>(false);
+  const [copiedPathId, setCopiedPathId] = useState<string | null>(null);
 
   const handleRevealFile = async (fileId: string, filename?: string) => {
     try {
@@ -292,71 +295,69 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          padding: '16px 24px',
+          padding: '14px 20px',
           borderBottom: '1px solid #334155'
         }}>
-          <div>
-            <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+            <h3 style={{ fontSize: '16px', fontWeight: 'bold', color: '#f8fafc', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {primaryFile?.filename || 'Dettaglio Media'}
             </h3>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '12px', color: '#94a3b8' }}>
-                Contenuto logico • {data?.copies_count || 1} copie fisiche ({data?.distinct_sources_count || 1} {(data?.distinct_sources_count || 1) === 1 ? 'disco' : 'dischi'})
+            {data?.protection_status === 'protected' && (
+              <span style={{
+                fontSize: '11px',
+                fontWeight: 600,
+                padding: '2px 8px',
+                borderRadius: '6px',
+                background: 'rgba(34, 197, 94, 0.15)',
+                color: '#22c55e',
+                border: '1px solid rgba(34, 197, 94, 0.3)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                flexShrink: 0
+              }}>
+                <ShieldCheck size={12} />
+                Protetto ({data.distinct_sources_count} dischi)
               </span>
-              {data?.protection_status === 'protected' && (
-                <span style={{
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  padding: '2px 8px',
-                  borderRadius: '6px',
-                  background: 'rgba(34, 197, 94, 0.15)',
-                  color: '#22c55e',
-                  border: '1px solid rgba(34, 197, 94, 0.3)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}>
-                  <ShieldCheck size={13} />
-                  Protetto su {data.distinct_sources_count} dischi
-                </span>
-              )}
-              {data?.protection_status === 'intra_source_duplicate' && (
-                <span style={{
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  padding: '2px 8px',
-                  borderRadius: '6px',
-                  background: 'rgba(245, 158, 11, 0.15)',
-                  color: '#f59e0b',
-                  border: '1px solid rgba(245, 158, 11, 0.3)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}>
-                  <AlertTriangle size={13} />
-                  Doppioni sullo stesso disco
-                </span>
-              )}
-              {data?.protection_status === 'unprotected' && (
-                <span style={{
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  padding: '2px 8px',
-                  borderRadius: '6px',
-                  background: 'rgba(244, 63, 94, 0.15)',
-                  color: '#f43f5e',
-                  border: '1px solid rgba(244, 63, 94, 0.3)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}>
-                  <ShieldAlert size={13} />
-                  A Rischio (1 Solo Disco)
-                </span>
-              )}
-            </div>
+            )}
+            {data?.protection_status === 'intra_source_duplicate' && (
+              <span style={{
+                fontSize: '11px',
+                fontWeight: 600,
+                padding: '2px 8px',
+                borderRadius: '6px',
+                background: 'rgba(245, 158, 11, 0.15)',
+                color: '#f59e0b',
+                border: '1px solid rgba(245, 158, 11, 0.3)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                flexShrink: 0
+              }}>
+                <AlertTriangle size={12} />
+                Doppione stesso disco
+              </span>
+            )}
+            {data?.protection_status === 'unprotected' && (
+              <span style={{
+                fontSize: '11px',
+                fontWeight: 600,
+                padding: '2px 8px',
+                borderRadius: '6px',
+                background: 'rgba(244, 63, 94, 0.15)',
+                color: '#f43f5e',
+                border: '1px solid rgba(244, 63, 94, 0.3)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                flexShrink: 0
+              }}>
+                <ShieldAlert size={12} />
+                1 solo disco
+              </span>
+            )}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
             <button
               onClick={handleRevealMedia}
               disabled={isRevealingPrimary || data?.files?.every((f: any) => f.source_status === 'offline')}
@@ -704,524 +705,616 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
             {error && <div style={{ color: '#f43f5e' }}>{error}</div>}
 
             {data && (
-              <>
-                {/* File Specs */}
-                <div>
-                  <h4 style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', marginBottom: '8px' }}>
-                    Specifiche Tecniche
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {/* 1. SEZIONE PRIORITARIA: COPIE FISICHE & DISCHI */}
+                <div style={{
+                  background: '#0f172a',
+                  border: '1px solid #334155',
+                  borderRadius: '10px',
+                  padding: '14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h4 style={{
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      color: '#cbd5e1',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      margin: 0
+                    }}>
+                      <HardDrive size={14} color="#38bdf8" />
+                      Copie Fisiche su Disco ({data.files?.length || 0})
+                    </h4>
+                    {data.distinct_sources_count > 1 ? (
+                      <span style={{
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        color: '#4ade80',
+                        background: 'rgba(34, 197, 94, 0.1)',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        border: '1px solid rgba(34, 197, 94, 0.25)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}>
+                        <ShieldCheck size={12} />
+                        {data.distinct_sources_count} Dischi
+                      </span>
+                    ) : (
+                      <span style={{
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        color: '#f87171',
+                        background: 'rgba(239, 68, 68, 0.1)',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        border: '1px solid rgba(239, 68, 68, 0.25)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}>
+                        <ShieldAlert size={12} />
+                        1 Solo Disco
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {data.files?.map((f: any) => {
+                      const isOffline = f.source_status === 'offline';
+                      const isMissing = f.availability_status === 'missing';
+                      return (
+                        <div
+                          key={f.id}
+                          style={{
+                            background: '#090d16',
+                            border: '1px solid #1e293b',
+                            borderRadius: '8px',
+                            padding: '10px 12px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '6px'
+                          }}
+                        >
+                          {/* Header riga copia: Disco + Status Dot */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontWeight: 600, fontSize: '13px', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <HardDrive size={13} color={isOffline ? '#64748b' : '#38bdf8'} />
+                              {f.source_name || 'Disco'}
+                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px' }}>
+                              <span style={{
+                                width: '6px',
+                                height: '6px',
+                                borderRadius: '50%',
+                                background: isOffline ? '#64748b' : '#22c55e',
+                                flexShrink: 0
+                              }} />
+                              <span style={{ color: isOffline ? '#94a3b8' : '#22c55e', fontWeight: 500 }}>
+                                {isOffline ? 'Offline' : 'Online'}
+                              </span>
+                              {isMissing && (
+                                <span style={{ color: '#f43f5e', fontSize: '10px', fontWeight: 600, background: 'rgba(244, 63, 94, 0.15)', padding: '1px 5px', borderRadius: '3px' }}>
+                                  Rimosso
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Percorso relativo */}
+                          <div style={{
+                            color: '#94a3b8',
+                            fontSize: '11px',
+                            fontFamily: 'monospace',
+                            wordBreak: 'break-all',
+                            background: '#020617',
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            border: '1px solid #1e293b',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                          }}>
+                            <Folder size={11} color="#64748b" style={{ flexShrink: 0 }} />
+                            <span style={{ flex: 1, minWidth: 0 }}>{f.relative_path}</span>
+                          </div>
+
+                          {/* Footer riga copia: Dimensione, Data e Azione Finder */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px' }}>
+                            <span style={{ fontSize: '11px', color: '#64748b' }}>
+                              {formatBytes(f.size_bytes)}
+                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(f.relative_path);
+                                  setCopiedPathId(f.id);
+                                  setTimeout(() => setCopiedPathId(null), 1500);
+                                  toast.success('Percorso copiato');
+                                }}
+                                title="Copia percorso relativo"
+                                style={{
+                                  background: 'transparent',
+                                  border: '1px solid #334155',
+                                  color: copiedPathId === f.id ? '#22c55e' : '#94a3b8',
+                                  borderRadius: '4px',
+                                  padding: '3px 7px',
+                                  fontSize: '10px',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '3px'
+                                }}
+                              >
+                                {copiedPathId === f.id ? <Check size={11} /> : <Copy size={11} />}
+                                <span>{copiedPathId === f.id ? 'Copiato' : 'Copia'}</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isOffline || isMissing || revealingFileId === f.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRevealFile(f.id, f.filename);
+                                }}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  padding: '3px 8px',
+                                  borderRadius: '4px',
+                                  background: isOffline ? '#1e293b' : 'rgba(2, 132, 199, 0.15)',
+                                  border: '1px solid ' + (isOffline ? '#334155' : 'rgba(56, 189, 248, 0.4)'),
+                                  color: isOffline ? '#64748b' : '#38bdf8',
+                                  fontSize: '11px',
+                                  fontWeight: 600,
+                                  cursor: isOffline ? 'not-allowed' : 'pointer',
+                                  opacity: isOffline ? 0.6 : 1
+                                }}
+                                title={isOffline ? 'Disco non collegato al computer' : 'Mostra nel Finder'}
+                              >
+                                <FolderOpen size={12} />
+                                {revealingFileId === f.id ? 'Apertura...' : 'Mostra nel Finder'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 2. SEZIONE DETTAGLI TECNICI & SCATTO EXIF */}
+                <div style={{
+                  background: '#0f172a',
+                  border: '1px solid #334155',
+                  borderRadius: '10px',
+                  padding: '14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px'
+                }}>
+                  <h4 style={{
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    color: '#cbd5e1',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    margin: 0
+                  }}>
+                    <Camera size={14} color="#38bdf8" />
+                    Scatto & Fotocamera
                   </h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px' }}>
+
+                  {(() => {
+                    try {
+                      const meta = primaryFile?.metadata_json ? JSON.parse(primaryFile.metadata_json) : {};
+                      const make = meta.make || meta.Make;
+                      const model = meta.model || meta.Model;
+                      const lens = meta.lensModel || meta.LensModel || meta.lens || meta.Lens;
+                      const fNumber = meta.fNumber || meta.FNumber;
+                      const expTime = meta.exposureTime || meta.ExposureTime;
+                      const iso = meta.iso || meta.ISO || meta.ISOSpeedRatings;
+
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {(make || model || lens) && (
+                            <div style={{ fontSize: '13px', color: '#f8fafc' }}>
+                              <strong>{[make, model].filter(Boolean).join(' ') || 'Fotocamera'}</strong>
+                              {lens && <span style={{ color: '#94a3b8', marginLeft: '6px' }}>· {lens}</span>}
+                            </div>
+                          )}
+
+                          {(fNumber || expTime || iso) && (
+                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                              {fNumber && (
+                                <span style={{ background: '#090d16', border: '1px solid #334155', padding: '2px 7px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#f8fafc' }}>
+                                  ƒ/{fNumber}
+                                </span>
+                              )}
+                              {expTime && (
+                                <span style={{ background: '#090d16', border: '1px solid #334155', padding: '2px 7px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#f8fafc' }}>
+                                  {expTime < 1 ? `1/${Math.round(1 / expTime)}s` : `${expTime}s`}
+                                </span>
+                              )}
+                              {iso && (
+                                <span style={{ background: '#090d16', border: '1px solid #334155', padding: '2px 7px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#f8fafc' }}>
+                                  ISO {iso}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    } catch {
+                      return null;
+                    }
+                  })()}
+
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, 1fr)',
+                    gap: '8px',
+                    paddingTop: '6px',
+                    borderTop: '1px solid #1e293b',
+                    fontSize: '12px'
+                  }}>
                     <div>
-                      <span style={{ color: '#64748b' }}>Tipo:</span>{' '}
-                      <strong>{data.media_type.toUpperCase()}</strong>
+                      <span style={{ color: '#64748b' }}>Data:</span>{' '}
+                      <strong style={{ color: '#f1f5f9' }}>{data.captured_at ? new Date(data.captured_at).toLocaleDateString() : 'N/D'}</strong>
                     </div>
                     <div>
-                      <span style={{ color: '#64748b' }}>Dimensione:</span>{' '}
-                      <strong>{formatBytes(primaryFile?.size_bytes)}</strong>
+                      <span style={{ color: '#64748b' }}>Peso:</span>{' '}
+                      <strong style={{ color: '#f1f5f9' }}>{formatBytes(primaryFile?.size_bytes)}</strong>
                     </div>
                     <div>
                       <span style={{ color: '#64748b' }}>Risoluzione:</span>{' '}
-                      <strong>{data.width && data.height ? `${data.width} × ${data.height}` : 'N/A'}</strong>
+                      <strong style={{ color: '#f1f5f9' }}>{data.width && data.height ? `${data.width} × ${data.height}` : 'N/D'}</strong>
                     </div>
-                    {data.duration_seconds && (
-                      <div>
-                        <span style={{ color: '#64748b' }}>Durata:</span>{' '}
-                        <strong>{data.duration_seconds}s</strong>
-                      </div>
-                    )}
-                    {data.is_live_photo && (
-                      <div style={{ gridColumn: 'span 2', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
-                        <span style={{ color: '#64748b' }}>Funzionalità:</span>{' '}
-                        <span style={{
-                          background: 'rgba(236, 72, 153, 0.2)',
-                          color: '#ec4899',
-                          fontWeight: 700,
-                          fontSize: '11px',
-                          padding: '2px 8px',
-                          borderRadius: '4px'
-                        }}>
-                          Apple Live Photo (Foto + Video clip abbinati)
-                        </span>
-                      </div>
-                    )}
+                    <div>
+                      <span style={{ color: '#64748b' }}>Formato:</span>{' '}
+                      <strong style={{ color: '#f1f5f9' }}>{primaryFile?.extension?.toUpperCase() || data.media_type?.toUpperCase()}</strong>
+                    </div>
                   </div>
+
+                  {(data.place_name || (data.latitude && data.longitude)) && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#38bdf8', paddingTop: '4px' }}>
+                      <MapPin size={13} color="#22c55e" style={{ flexShrink: 0 }} />
+                      <span>{data.place_name || `${data.latitude?.toFixed(4)}, ${data.longitude?.toFixed(4)}`}</span>
+                      {data.latitude && data.longitude && (
+                        <a
+                          href={`https://www.openstreetmap.org/?mlat=${data.latitude}&mlon=${data.longitude}#map=16/${data.latitude}/${data.longitude}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: '#38bdf8', display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '11px', marginLeft: 'auto' }}
+                        >
+                          Mappa <ExternalLink size={10} />
+                        </a>
+                      )}
+                    </div>
+                  )}
+
+                  {data.is_live_photo && (
+                    <div style={{ fontSize: '11px', color: '#ec4899', background: 'rgba(236, 72, 153, 0.1)', padding: '4px 8px', borderRadius: '4px', border: '1px solid rgba(236, 72, 153, 0.25)' }}>
+                      Apple Live Photo (clip video abbinata)
+                    </div>
+                  )}
                 </div>
 
-                {/* EXIF & Camera */}
-                <div>
-                  <h4 style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', marginBottom: '8px' }}>
-                    Metadati EXIF & Acquisizione
-                  </h4>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <Calendar size={15} color="#38bdf8" />
-                      <span>Data Scatto:{' '}
-                        <strong>
-                          {data.captured_at ? new Date(data.captured_at).toLocaleString() : 'Non specificata'}
-                        </strong>
+                {/* 3. SEZIONE ORGANIZZAZIONE (Album & Tag) */}
+                <div style={{
+                  background: '#0f172a',
+                  border: '1px solid #334155',
+                  borderRadius: '10px',
+                  padding: '14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px'
+                }}>
+                  {/* Riga Album */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 600, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Folder size={13} color="#38bdf8" />
+                        Album ({data.albums?.length || 0})
                       </span>
+                      <button
+                        onClick={() => setShowNewAlbumInput(!showNewAlbumInput)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: '#38bdf8',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '3px'
+                        }}
+                      >
+                        <Plus size={11} /> Nuovo
+                      </button>
                     </div>
 
-                    {(data.place_name || (data.latitude && data.longitude)) && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <MapPin size={15} color="#22c55e" />
-                        <span>
-                          {data.place_name && <strong>{data.place_name} </strong>}
-                          {data.latitude && data.longitude && (
-                            <span style={{ color: '#94a3b8', fontSize: '12px' }}>
-                              ({data.latitude.toFixed(4)}, {data.longitude.toFixed(4)})
-                            </span>
-                          )}
-                        </span>
-                        {data.latitude && data.longitude && (
-                          <a
-                            href={`https://www.openstreetmap.org/?mlat=${data.latitude}&mlon=${data.longitude}#map=16/${data.latitude}/${data.longitude}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{ color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '2px', fontSize: '11px', marginLeft: '4px' }}
-                          >
-                            Mappa <ExternalLink size={10} />
-                          </a>
-                        )}
+                    {showNewAlbumInput && (
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <input
+                          type="text"
+                          placeholder="Nome album..."
+                          value={newAlbumName}
+                          onChange={(e) => setNewAlbumName(e.target.value)}
+                          style={{
+                            flex: 1,
+                            background: '#090d16',
+                            border: '1px solid #334155',
+                            borderRadius: '6px',
+                            color: '#f8fafc',
+                            padding: '4px 8px',
+                            fontSize: '12px'
+                          }}
+                        />
+                        <button
+                          onClick={handleCreateAndAddAlbum}
+                          style={{
+                            background: '#0284c7',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            padding: '4px 10px',
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Crea
+                        </button>
                       </div>
                     )}
 
-                    {primaryFile?.metadata_json && (() => {
-                      try {
-                        const meta = JSON.parse(primaryFile.metadata_json);
-                        const make = meta.make || meta.Make;
-                        const model = meta.model || meta.Model;
-                        const lens = meta.lensModel || meta.LensModel || meta.lens || meta.Lens;
-                        const fNumber = meta.fNumber || meta.FNumber;
-                        const expTime = meta.exposureTime || meta.ExposureTime;
-                        const iso = meta.iso || meta.ISO || meta.ISOSpeedRatings;
-
-                        return (
-                          <>
-                            {(make || model) && (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <Camera size={15} color="#38bdf8" />
-                                <span>Fotocamera: <strong>{[make, model].filter(Boolean).join(' ')}</strong></span>
-                              </div>
-                            )}
-                            {lens && (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#cbd5e1' }}>
-                                <span style={{ color: '#64748b' }}>Obiettivo:</span>
-                                <strong>{lens}</strong>
-                              </div>
-                            )}
-                            {(fNumber || expTime || iso) && (
-                              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' }}>
-                                {fNumber && (
-                                  <span style={{ background: '#0f172a', border: '1px solid #334155', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#f8fafc' }}>
-                                    ƒ/{fNumber}
-                                  </span>
-                                )}
-                                {expTime && (
-                                  <span style={{ background: '#0f172a', border: '1px solid #334155', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#f8fafc' }}>
-                                    {expTime < 1 ? `1/${Math.round(1 / expTime)}s` : `${expTime}s`}
-                                  </span>
-                                )}
-                                {iso && (
-                                  <span style={{ background: '#0f172a', border: '1px solid #334155', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#f8fafc' }}>
-                                    ISO {iso}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                            {(meta.has_apple_edits || meta.has_xmp_sidecar) && (
-                              <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
-                                {meta.has_apple_edits && (
-                                  <span style={{ background: 'rgba(236, 72, 153, 0.15)', color: '#ec4899', fontSize: '10px', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
-                                    Apple Edits (.AAE)
-                                  </span>
-                                )}
-                                {meta.has_xmp_sidecar && (
-                                  <span style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', fontSize: '10px', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
-                                    Lightroom / XMP (.XMP)
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </>
-                        );
-                      } catch {
-                        return null;
-                      }
-                    })()}
-                  </div>
-                </div>
-
-                {/* Virtual Albums Section */}
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <h4 style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Folder size={15} color="#38bdf8" />
-                      Album Virtuali ({data.albums?.length || 0})
-                    </h4>
-                    <button
-                      onClick={() => setShowNewAlbumInput(!showNewAlbumInput)}
-                      style={{
-                        background: 'transparent',
-                        border: '1px solid #334155',
-                        borderRadius: '4px',
-                        color: '#38bdf8',
-                        padding: '2px 8px',
-                        fontSize: '11px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}
-                    >
-                      <Plus size={12} /> Nuovo
-                    </button>
-                  </div>
-
-                  {showNewAlbumInput && (
-                    <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
-                      <input
-                        type="text"
-                        placeholder="Nome nuovo album..."
-                        value={newAlbumName}
-                        onChange={(e) => setNewAlbumName(e.target.value)}
-                        style={{
-                          flex: 1,
-                          background: '#0f172a',
-                          border: '1px solid #334155',
-                          borderRadius: '6px',
-                          color: '#f8fafc',
-                          padding: '4px 8px',
-                          fontSize: '12px'
-                        }}
-                      />
-                      <button
-                        onClick={handleCreateAndAddAlbum}
-                        style={{
-                          background: '#0284c7',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '6px',
-                          padding: '4px 10px',
-                          fontSize: '12px',
-                          fontWeight: 600,
-                          cursor: 'pointer'
-                        }}
-                      >
-                        Crea & Aggiungi
-                      </button>
-                    </div>
-                  )}
-
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
-                    {data.albums && data.albums.length > 0 ? (
-                      data.albums.map((alb: any) => (
-                        <span
-                          key={alb.id}
-                          style={{
-                            background: '#0f172a',
-                            border: '1px solid #38bdf8',
-                            color: '#38bdf8',
-                            borderRadius: '14px',
-                            padding: '3px 10px',
-                            fontSize: '12px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px'
-                          }}
-                        >
-                          {alb.name}
-                          <button
-                            onClick={() => handleRemoveMediaFromAlbum(alb.id)}
-                            style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0 }}
-                          >
-                            <X size={12} />
-                          </button>
-                        </span>
-                      ))
-                    ) : (
-                      <span style={{ fontSize: '12px', color: '#64748b' }}>Nessun album assegnato</span>
-                    )}
-
-                    {/* Add to existing album dropdown */}
-                    {availableAlbums.filter((a) => !data.albums?.some((da: any) => da.id === a.id)).length > 0 && (
-                      <select
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            handleAddMediaToAlbum(e.target.value);
-                            e.target.value = '';
-                          }
-                        }}
-                        defaultValue=""
-                        style={{
-                          background: '#0f172a',
-                          border: '1px dashed #475569',
-                          borderRadius: '14px',
-                          color: '#94a3b8',
-                          padding: '3px 8px',
-                          fontSize: '11px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <option value="" disabled>+ Aggiungi ad album...</option>
-                        {availableAlbums
-                          .filter((a) => !data.albums?.some((da: any) => da.id === a.id))
-                          .map((a) => (
-                            <option key={a.id} value={a.id}>{a.name}</option>
-                          ))}
-                      </select>
-                    )}
-                  </div>
-                </div>
-
-                {/* Virtual Tags Section */}
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <h4 style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <TagIcon size={15} color="#ec4899" />
-                      Tag ({data.tags?.length || 0})
-                    </h4>
-                    <button
-                      onClick={() => setShowNewTagInput(!showNewTagInput)}
-                      style={{
-                        background: 'transparent',
-                        border: '1px solid #334155',
-                        borderRadius: '4px',
-                        color: '#ec4899',
-                        padding: '2px 8px',
-                        fontSize: '11px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}
-                    >
-                      <Plus size={12} /> Nuovo
-                    </button>
-                  </div>
-
-                  {showNewTagInput && (
-                    <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', alignItems: 'center' }}>
-                      <input
-                        type="text"
-                        placeholder="Nome nuovo tag..."
-                        value={newTagName}
-                        onChange={(e) => setNewTagName(e.target.value)}
-                        style={{
-                          flex: 1,
-                          background: '#0f172a',
-                          border: '1px solid #334155',
-                          borderRadius: '6px',
-                          color: '#f8fafc',
-                          padding: '4px 8px',
-                          fontSize: '12px'
-                        }}
-                      />
-                      <input
-                        type="color"
-                        value={newTagColor}
-                        onChange={(e) => setNewTagColor(e.target.value)}
-                        style={{ width: '28px', height: '28px', border: 'none', background: 'transparent', cursor: 'pointer' }}
-                      />
-                      <button
-                        onClick={handleCreateAndAddTag}
-                        style={{
-                          background: '#ec4899',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '6px',
-                          padding: '4px 10px',
-                          fontSize: '12px',
-                          fontWeight: 600,
-                          cursor: 'pointer'
-                        }}
-                      >
-                        Aggiungi
-                      </button>
-                    </div>
-                  )}
-
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
-                    {data.tags && data.tags.length > 0 ? (
-                      data.tags.map((t: any) => (
-                        <span
-                          key={t.id}
-                          style={{
-                            background: `${t.color || '#38bdf8'}22`,
-                            border: `1px solid ${t.color || '#38bdf8'}`,
-                            color: t.color || '#38bdf8',
-                            borderRadius: '14px',
-                            padding: '3px 10px',
-                            fontSize: '12px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px'
-                          }}
-                        >
-                          #{t.name}
-                          <button
-                            onClick={() => handleRemoveMediaFromTag(t.id)}
-                            style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0 }}
-                          >
-                            <X size={12} />
-                          </button>
-                        </span>
-                      ))
-                    ) : (
-                      <span style={{ fontSize: '12px', color: '#64748b' }}>Nessun tag assegnato</span>
-                    )}
-
-                    {/* Add to existing tag dropdown */}
-                    {availableTags.filter((t) => !data.tags?.some((dt: any) => dt.id === t.id)).length > 0 && (
-                      <select
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            handleAddMediaToTag(e.target.value);
-                            e.target.value = '';
-                          }
-                        }}
-                        defaultValue=""
-                        style={{
-                          background: '#0f172a',
-                          border: '1px dashed #475569',
-                          borderRadius: '14px',
-                          color: '#94a3b8',
-                          padding: '3px 8px',
-                          fontSize: '11px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <option value="" disabled>+ Aggiungi tag...</option>
-                        {availableTags
-                          .filter((t) => !data.tags?.some((dt: any) => dt.id === t.id))
-                          .map((t) => (
-                            <option key={t.id} value={t.id}>#{t.name}</option>
-                          ))}
-                      </select>
-                    )}
-                  </div>
-                </div>
-
-                {/* Cryptographic Hash */}
-                <div>
-                  <h4 style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', marginBottom: '6px' }}>
-                    Impronta Digitale (SHA-256)
-                  </h4>
-                  <div style={{
-                    background: '#0f172a',
-                    border: '1px solid #334155',
-                    borderRadius: '6px',
-                    padding: '8px 10px',
-                    fontFamily: 'monospace',
-                    fontSize: '11px',
-                    wordBreak: 'break-all',
-                    color: '#38bdf8'
-                  }}>
-                    {data.canonical_sha256}
-                  </div>
-                </div>
-
-                {/* Physical Copies Across Sources */}
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <h4 style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>
-                      Copie Fisiche Identificate ({data.files?.length || 0})
-                    </h4>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
-                    {data.files?.map((f: any) => (
-                      <div
-                        key={f.id}
-                        style={{
-                          background: '#0f172a',
-                          border: '1px solid #334155',
-                          borderRadius: '8px',
-                          padding: '10px 12px',
-                          fontSize: '12px'
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <HardDrive size={14} color={f.source_status === 'offline' ? '#94a3b8' : '#38bdf8'} />
-                            {f.source_name || 'Fonte'}
-                          </span>
-                          <div style={{ display: 'flex', gap: '6px' }}>
-                            {f.source_status === 'offline' ? (
-                              <span style={{
-                                fontSize: '10px',
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                                background: 'rgba(148, 163, 184, 0.2)',
-                                color: '#94a3b8',
-                                fontWeight: 600
-                              }}>
-                                DISCO OFFLINE
-                              </span>
-                            ) : (
-                              <span style={{
-                                fontSize: '10px',
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                                background: 'rgba(34, 197, 94, 0.2)',
-                                color: '#22c55e',
-                                fontWeight: 600
-                              }}>
-                                DISCO ONLINE
-                              </span>
-                            )}
-                            {f.availability_status === 'missing' && (
-                              <span style={{
-                                fontSize: '10px',
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                                background: 'rgba(244, 63, 94, 0.2)',
-                                color: '#f43f5e',
-                                fontWeight: 600
-                              }}>
-                                SPOSTATO / RIMOSSO
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div style={{ color: '#94a3b8', fontSize: '11px', marginTop: '4px', wordBreak: 'break-all' }}>
-                          <code>{f.relative_path}</code>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
-                          <div style={{ color: '#64748b', fontSize: '10px' }}>
-                            {formatBytes(f.size_bytes)} · Ultima verifica: {new Date(f.last_seen_at).toLocaleDateString()}
-                          </div>
-                          <button
-                            type="button"
-                            disabled={f.source_status === 'offline' || f.availability_status === 'missing' || revealingFileId === f.id}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRevealFile(f.id, f.filename);
-                            }}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                      {data.albums && data.albums.length > 0 ? (
+                        data.albums.map((alb: any) => (
+                          <span
+                            key={alb.id}
                             style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              padding: '3px 8px',
-                              borderRadius: '4px',
-                              background: f.source_status === 'offline' ? '#1e293b' : 'rgba(2, 132, 199, 0.15)',
-                              border: '1px solid ' + (f.source_status === 'offline' ? '#334155' : 'rgba(56, 189, 248, 0.4)'),
-                              color: f.source_status === 'offline' ? '#64748b' : '#38bdf8',
+                              background: 'rgba(56, 189, 248, 0.1)',
+                              border: '1px solid rgba(56, 189, 248, 0.3)',
+                              color: '#38bdf8',
+                              borderRadius: '12px',
+                              padding: '2px 8px',
                               fontSize: '11px',
                               fontWeight: 500,
-                              cursor: f.source_status === 'offline' ? 'not-allowed' : 'pointer',
-                              opacity: f.source_status === 'offline' ? 0.6 : 1
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px'
                             }}
-                            title={f.source_status === 'offline' ? 'Disco non collegato al computer' : 'Evidenzia questo file nel Finder'}
                           >
-                            <FolderOpen size={12} />
-                            {revealingFileId === f.id ? 'Apertura...' : 'Mostra nel Finder'}
-                          </button>
-                        </div>
+                            {alb.name}
+                            <button
+                              onClick={() => handleRemoveMediaFromAlbum(alb.id)}
+                              style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, display: 'flex' }}
+                            >
+                              <X size={10} />
+                            </button>
+                          </span>
+                        ))
+                      ) : (
+                        <span style={{ fontSize: '11px', color: '#64748b', fontStyle: 'italic' }}>Nessun album assegnato</span>
+                      )}
+
+                      {availableAlbums.filter((a) => !data.albums?.some((da: any) => da.id === a.id)).length > 0 && (
+                        <select
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              handleAddMediaToAlbum(e.target.value);
+                              e.target.value = '';
+                            }
+                          }}
+                          defaultValue=""
+                          style={{
+                            background: '#090d16',
+                            border: '1px dashed #334155',
+                            borderRadius: '12px',
+                            color: '#94a3b8',
+                            padding: '2px 8px',
+                            fontSize: '11px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <option value="" disabled>+ Aggiungi...</option>
+                          {availableAlbums
+                            .filter((a) => !data.albums?.some((da: any) => da.id === a.id))
+                            .map((a) => (
+                              <option key={a.id} value={a.id}>{a.name}</option>
+                            ))}
+                        </select>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Riga Tag */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingTop: '8px', borderTop: '1px solid #1e293b' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 600, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <TagIcon size={13} color="#ec4899" />
+                        Tag ({data.tags?.length || 0})
+                      </span>
+                      <button
+                        onClick={() => setShowNewTagInput(!showNewTagInput)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: '#ec4899',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '3px'
+                        }}
+                      >
+                        <Plus size={11} /> Nuovo
+                      </button>
+                    </div>
+
+                    {showNewTagInput && (
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          placeholder="Nome tag..."
+                          value={newTagName}
+                          onChange={(e) => setNewTagName(e.target.value)}
+                          style={{
+                            flex: 1,
+                            background: '#090d16',
+                            border: '1px solid #334155',
+                            borderRadius: '6px',
+                            color: '#f8fafc',
+                            padding: '4px 8px',
+                            fontSize: '12px'
+                          }}
+                        />
+                        <input
+                          type="color"
+                          value={newTagColor}
+                          onChange={(e) => setNewTagColor(e.target.value)}
+                          style={{ width: '26px', height: '26px', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                        />
+                        <button
+                          onClick={handleCreateAndAddTag}
+                          style={{
+                            background: '#ec4899',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            padding: '4px 10px',
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Aggiungi
+                        </button>
                       </div>
-                    ))}
+                    )}
+
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                      {data.tags && data.tags.length > 0 ? (
+                        data.tags.map((t: any) => (
+                          <span
+                            key={t.id}
+                            style={{
+                              background: `${t.color || '#38bdf8'}18`,
+                              border: `1px solid ${t.color || '#38bdf8'}50`,
+                              color: t.color || '#38bdf8',
+                              borderRadius: '12px',
+                              padding: '2px 8px',
+                              fontSize: '11px',
+                              fontWeight: 500,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px'
+                            }}
+                          >
+                            #{t.name}
+                            <button
+                              onClick={() => handleRemoveMediaFromTag(t.id)}
+                              style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, display: 'flex' }}
+                            >
+                              <X size={10} />
+                            </button>
+                          </span>
+                        ))
+                      ) : (
+                        <span style={{ fontSize: '11px', color: '#64748b', fontStyle: 'italic' }}>Nessun tag assegnato</span>
+                      )}
+
+                      {availableTags.filter((t) => !data.tags?.some((dt: any) => dt.id === t.id)).length > 0 && (
+                        <select
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              handleAddMediaToTag(e.target.value);
+                              e.target.value = '';
+                            }
+                          }}
+                          defaultValue=""
+                          style={{
+                            background: '#090d16',
+                            border: '1px dashed #334155',
+                            borderRadius: '12px',
+                            color: '#94a3b8',
+                            padding: '2px 8px',
+                            fontSize: '11px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <option value="" disabled>+ Aggiungi tag...</option>
+                          {availableTags
+                            .filter((t) => !data.tags?.some((dt: any) => dt.id === t.id))
+                            .map((t) => (
+                              <option key={t.id} value={t.id}>#{t.name}</option>
+                            ))}
+                        </select>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </>
+
+                {/* 4. FOOTER TECNICO: IMPRONTA SHA-256 (DISCRETA E COMPATTA) */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '8px 12px',
+                  background: '#090d16',
+                  border: '1px solid #1e293b',
+                  borderRadius: '8px',
+                  fontSize: '11px',
+                  color: '#64748b'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden' }}>
+                    <span style={{ fontWeight: 600, color: '#94a3b8', flexShrink: 0 }}>SHA-256:</span>
+                    <code style={{ color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {data.canonical_sha256}
+                    </code>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(data.canonical_sha256);
+                      setCopiedSha(true);
+                      setTimeout(() => setCopiedSha(false), 1500);
+                      toast.success('SHA-256 copiato');
+                    }}
+                    title="Copia hash SHA-256"
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: copiedSha ? '#22c55e' : '#94a3b8',
+                      cursor: 'pointer',
+                      padding: '2px 6px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      fontSize: '11px',
+                      flexShrink: 0
+                    }}
+                  >
+                    {copiedSha ? <Check size={12} /> : <Copy size={12} />}
+                    <span>{copiedSha ? 'Copiato' : 'Copia'}</span>
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </div>

@@ -6,23 +6,19 @@ import {
   ArrowUpDown,
   Image,
   Video,
-  Copy,
   FolderOpen,
   Calendar,
   Grid as GridIcon,
   Heart,
   CheckSquare,
   Square,
-  Play,
   Folder,
   Tag as TagIcon,
   ShieldCheck,
-  AlertTriangle,
   MapPin,
   X,
   Check
 } from 'lucide-react';
-import { isRawExtension } from '../scanner/formatDetector';
 import { MediaDetailModal } from './MediaDetailModal';
 
 interface LibraryViewProps {
@@ -278,8 +274,6 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   }, [mediaList]);
 
   const renderMediaCard = (media: any) => {
-    const fileExt = media.primary_extension || (media.primary_filename ? media.primary_filename.split('.').pop() || '' : '');
-    const isRaw = fileExt ? isRawExtension(fileExt) : false;
     const isSelected = selectedIds.has(media.id);
     const isHoveredLive = hoveredLiveMediaId === media.id;
     const liveVideoId = media.is_live_photo && media.live_video_media_id ? media.live_video_media_id : null;
@@ -405,113 +399,10 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             zIndex: 10,
             transition: 'background 0.15s ease'
           }}
+          title={media.is_favorite ? 'Rimuovi dai Preferiti' : 'Aggiungi ai Preferiti'}
         >
           <Heart size={14} fill={media.is_favorite ? 'white' : 'none'} color="white" />
         </button>
-
-        {/* Live Photo badge */}
-        {media.is_live_photo && (
-          <span style={{
-            position: 'absolute',
-            bottom: '8px',
-            right: '8px',
-            background: isHoveredLive ? '#22c55e' : 'rgba(236, 72, 153, 0.9)',
-            color: 'white',
-            fontSize: '10px',
-            fontWeight: 700,
-            padding: '2px 6px',
-            borderRadius: '4px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.5)',
-            letterSpacing: '0.5px'
-          }}>
-            {isHoveredLive ? <Play size={10} fill="white" /> : null}
-            LIVE
-          </span>
-        )}
-
-        {/* RAW badge */}
-        {isRaw && (
-          <span style={{
-            position: 'absolute',
-            bottom: '8px',
-            left: '8px',
-            background: '#f59e0b',
-            color: '#0f172a',
-            fontSize: '10px',
-            fontWeight: 800,
-            padding: '2px 6px',
-            borderRadius: '4px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '3px',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.5)',
-            letterSpacing: '0.5px'
-          }}>
-            RAW · {fileExt.toUpperCase()}
-          </span>
-        )}
-
-        {/* Protection / Multiple copies badge */}
-        {media.protection_status === 'protected' ? (
-          <span style={{
-            position: 'absolute',
-            top: '8px',
-            right: '42px',
-            background: '#22c55e',
-            color: '#064e3b',
-            fontSize: '10px',
-            fontWeight: 800,
-            padding: '2px 7px',
-            borderRadius: '4px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.5)'
-          }}>
-            <ShieldCheck size={11} /> {media.distinct_sources_count || 2} DISCHI
-          </span>
-        ) : media.protection_status === 'intra_source_duplicate' ? (
-          <span style={{
-            position: 'absolute',
-            top: '8px',
-            right: '42px',
-            background: '#f59e0b',
-            color: '#0f172a',
-            fontSize: '10px',
-            fontWeight: 800,
-            padding: '2px 7px',
-            borderRadius: '4px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.5)'
-          }}>
-            <AlertTriangle size={11} />
-            {media.copies_count} COPIE · {media.distinct_sources_count || 1} {(media.distinct_sources_count || 1) === 1 ? 'DISCO' : 'DISCHI'}
-          </span>
-        ) : (!media.protection_status && media.copies_count > 1) ? (
-          <span style={{
-            position: 'absolute',
-            top: '8px',
-            right: '42px',
-            background: '#f59e0b',
-            color: 'black',
-            fontSize: '10px',
-            fontWeight: 700,
-            padding: '2px 7px',
-            borderRadius: '4px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.5)'
-          }}>
-            <Copy size={11} />
-            {media.copies_count} COPIE
-          </span>
-        ) : null}
       </div>
 
       {/* Media Details Footer */}
@@ -551,7 +442,14 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           color: '#94a3b8'
         }}>
           <span>{media.captured_at ? new Date(media.captured_at).toLocaleDateString() : 'N/D'}</span>
-          <span>{formatBytes(media.primary_size_bytes)}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {media.distinct_sources_count > 1 && (
+              <span title={`Backup presente su ${media.distinct_sources_count} dischi`} style={{ color: '#22c55e', display: 'inline-flex', alignItems: 'center', gap: '2px', fontWeight: 600 }}>
+                <ShieldCheck size={11} /> {media.distinct_sources_count}
+              </span>
+            )}
+            <span>{formatBytes(media.primary_size_bytes)}</span>
+          </div>
         </div>
       </div>
     </div>
