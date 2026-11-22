@@ -199,6 +199,26 @@ def get_media_detail(db: Session, user_id: str, media_id: str) -> MediaDetailOut
     files = db.query(File, Source).join(Source, File.source_id == Source.id)\
               .filter(File.media_id == media.id).all()
 
+    # Auto-repair legacy low-res metadata (e.g. <= 200px from initial RAW thumbnail bug) when file is online
+    if (media.width is None or media.width <= 200) and files:
+        for f, s in files:
+            if s.root_path and s.status == "online":
+                try:
+                    from app.services.source_service import resolve_safe_source_file
+                    safe_path = resolve_safe_source_file(s.root_path, f.relative_path)
+                    if safe_path:
+                        from app.services.media_preview_service import generate_image_preview_bytes
+                        _, true_w, true_h, meta, _ = generate_image_preview_bytes(safe_path)
+                        if true_w and true_w > 200:
+                            media.width = true_w
+                            media.height = true_h
+                            f.width = true_w
+                            f.height = true_h
+                            db.commit()
+                            break
+                except Exception:
+                    db.rollback()
+
     file_outs = []
     for f, s in files:
         file_outs.append(FileOut(

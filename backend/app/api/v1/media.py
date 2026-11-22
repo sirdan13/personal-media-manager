@@ -19,20 +19,7 @@ from app.services.media_service import (
 from app.api.deps import get_current_user, get_current_user_from_header_or_query
 from app.models.entities import User, Thumbnail, Media, File, Source
 from app.core.config import settings
-
-def resolve_safe_source_file(root_path: str, relative_path: str) -> Optional[str]:
-    if not root_path or not relative_path:
-        return None
-    try:
-        real_root = os.path.realpath(root_path)
-        real_target = os.path.realpath(os.path.join(real_root, relative_path))
-        if os.path.commonpath([real_root, real_target]) != real_root:
-            return None
-        if os.path.isfile(real_target):
-            return real_target
-    except (ValueError, OSError):
-        return None
-    return None
+from app.services.source_service import resolve_safe_source_file
 
 router = APIRouter(prefix="/media", tags=["Libreria Media"])
 

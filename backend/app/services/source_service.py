@@ -9,6 +9,20 @@ from app.models.entities import Source, File, Thumbnail, Media
 from app.core.config import settings
 from app.schemas.source import SourceCreate, SourceUpdate, SourceOut
 
+def resolve_safe_source_file(root_path: str, relative_path: str) -> Optional[str]:
+    if not root_path or not relative_path:
+        return None
+    try:
+        real_root = os.path.realpath(root_path)
+        real_target = os.path.realpath(os.path.join(real_root, relative_path))
+        if os.path.commonpath([real_root, real_target]) != real_root:
+            return None
+        if os.path.isfile(real_target):
+            return real_target
+    except (ValueError, OSError):
+        return None
+    return None
+
 def get_user_sources(db: Session, user_id: str) -> List[SourceOut]:
     sources = db.query(Source).filter(Source.user_id == user_id).all()
     results = []

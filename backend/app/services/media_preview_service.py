@@ -251,6 +251,14 @@ def generate_image_preview_bytes(
             img = img.convert("RGB")
 
         orig_w, orig_h = img.size
+        # Capture true sensor/original dimensions
+        full_w = metadata.get("ExifImageWidth") or metadata.get("ImageWidth") or orig_w
+        full_h = metadata.get("ExifImageHeight") or metadata.get("ImageLength") or orig_h
+        if not isinstance(full_w, int) or full_w <= 0:
+            full_w = orig_w
+        if not isinstance(full_h, int) or full_h <= 0:
+            full_h = orig_h
+
         if max(orig_w, orig_h) > max_edge:
             img.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
         w, h = img.size
@@ -262,7 +270,7 @@ def generate_image_preview_bytes(
         else:
             img.save(buf, format="JPEG", quality=quality, optimize=True)
 
-        return buf.getvalue(), w, h, metadata, captured_at
+        return buf.getvalue(), full_w, full_h, metadata, captured_at
     except Exception:
         return None, None, None, metadata, captured_at
 
