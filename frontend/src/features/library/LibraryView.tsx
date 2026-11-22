@@ -17,7 +17,8 @@ import {
   ShieldCheck,
   MapPin,
   X,
-  Check
+  Check,
+  Eye
 } from 'lucide-react';
 import { MediaDetailModal } from './MediaDetailModal';
 
@@ -78,6 +79,23 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState<boolean>(false);
   const [hoveredLiveMediaId, setHoveredLiveMediaId] = useState<string | null>(null);
+
+  // Context Menu state
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    media: any;
+  } | null>(null);
+
+  // Marquee drag-selection state
+  const [marquee, setMarquee] = useState<{
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+    isSelecting: boolean;
+  } | null>(null);
+  const gridContainerRef = React.useRef<HTMLDivElement>(null);
 
   // Sync initialType and geoFilter when props change
   useEffect(() => {
@@ -198,6 +216,106 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     });
   };
 
+  const handleCardContextMenu = (e: React.MouseEvent, media: any) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!selectedIds.has(media.id)) {
+      setSelectedIds(new Set([media.id]));
+    }
+    const menuWidth = 220;
+    const menuHeight = 260;
+    const x = Math.min(e.clientX, window.innerWidth - menuWidth - 16);
+    const y = Math.min(e.clientY, window.innerHeight - menuHeight - 16);
+    setContextMenu({ x, y, media });
+  };
+
+  const handleGridMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('button, input, select, textarea, a, .media-card-checkbox, .media-card-favorite, .floating-batch-bar, .context-menu-popup')) {
+      return;
+    }
+    setMarquee({
+      startX: e.clientX,
+      startY: e.clientY,
+      currentX: e.clientX,
+      currentY: e.clientY,
+      isSelecting: false
+    });
+  };
+
+  // Close context menu on outside clicks / scroll / Escape
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleClose = () => setContextMenu(null);
+    window.addEventListener('click', handleClose);
+    window.addEventListener('scroll', handleClose, true);
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setContextMenu(null);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => {
+      window.removeEventListener('click', handleClose);
+      window.removeEventListener('scroll', handleClose, true);
+      window.removeEventListener('keydown', handleKey);
+    };
+  }, [contextMenu]);
+
+  // Global Marquee drag-selection
+  useEffect(() => {
+    if (!marquee) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const dist = Math.hypot(e.clientX - marquee.startX, e.clientY - marquee.startY);
+      const isSelecting = marquee.isSelecting || dist > 6;
+
+      setMarquee((prev) => prev ? {
+        ...prev,
+        currentX: e.clientX,
+        currentY: e.clientY,
+        isSelecting
+      } : null);
+
+      if (isSelecting) {
+        const boxLeft = Math.min(marquee.startX, e.clientX);
+        const boxTop = Math.min(marquee.startY, e.clientY);
+        const boxRight = Math.max(marquee.startX, e.clientX);
+        const boxBottom = Math.max(marquee.startY, e.clientY);
+
+        const cards = document.querySelectorAll('[data-media-id]');
+        const newSelected = new Set(e.shiftKey || e.metaKey || e.ctrlKey ? selectedIds : []);
+
+        cards.forEach((card) => {
+          const id = card.getAttribute('data-media-id');
+          if (!id) return;
+          const rect = card.getBoundingClientRect();
+          const intersects = !(
+            rect.right < boxLeft ||
+            rect.left > boxRight ||
+            rect.bottom < boxTop ||
+            rect.top > boxBottom
+          );
+          if (intersects) {
+            newSelected.add(id);
+          }
+        });
+
+        setSelectedIds(newSelected);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setMarquee(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [marquee, selectedIds]);
+
   const handleSelectAll = () => {
     if (selectedIds.size === mediaList.length) {
       setSelectedIds(new Set());
@@ -281,13 +399,16 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     return (
     <div
       key={media.id}
+      data-media-id={media.id}
       onClick={(e) => {
-        if (isSelectionMode) {
+        if (marquee?.isSelecting) return;
+        if (e.shiftKey || e.metaKey || e.ctrlKey || selectedIds.size > 0 || isSelectionMode) {
           handleToggleSelect(e, media.id);
         } else {
           setSelectedMediaId(media.id);
         }
       }}
+      onContextMenu={(e) => handleCardContextMenu(e, media)}
       onMouseEnter={() => {
         if (media.is_live_photo && liveVideoId) {
           setHoveredLiveMediaId(media.id);
@@ -307,13 +428,15 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               : (media.protection_status === 'protected'
                   ? '1px solid rgba(34, 197, 94, 0.4)'
                   : '1px solid #334155')),
+        boxShadow: isSelected ? '0 0 0 2px rgba(56, 189, 248, 0.3)' : 'none',
         borderRadius: '10px',
         overflow: 'hidden',
         cursor: 'pointer',
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
-        transition: 'transform 0.15s ease, border-color 0.15s ease'
+        transition: 'transform 0.15s ease, border-color 0.15s ease',
+        userSelect: 'none'
       }}
     >
       {/* Thumbnail / Video Container */}
@@ -356,28 +479,32 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           </div>
         )}
 
-        {/* Selection Checkbox */}
-        {(isSelectionMode || isSelected) && (
-          <div
-            onClick={(e) => handleToggleSelect(e, media.id)}
-            style={{
-              position: 'absolute',
-              top: '8px',
-              left: '8px',
-              background: isSelected ? '#0284c7' : 'rgba(15, 23, 42, 0.7)',
-              borderRadius: '6px',
-              padding: '4px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'white',
-              cursor: 'pointer',
-              zIndex: 10
-            }}
-          >
-            {isSelected ? <CheckSquare size={16} /> : <Square size={16} />}
-          </div>
-        )}
+        {/* Selection Flag / Checkbox in Top-Left */}
+        <div
+          onClick={(e) => handleToggleSelect(e, media.id)}
+          className="media-card-checkbox"
+          style={{
+            position: 'absolute',
+            top: '8px',
+            left: '8px',
+            background: isSelected ? '#0284c7' : 'rgba(15, 23, 42, 0.75)',
+            border: isSelected ? '1px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.35)',
+            borderRadius: '6px',
+            width: '24px',
+            height: '24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'white',
+            cursor: 'pointer',
+            zIndex: 10,
+            opacity: isSelected || isSelectionMode ? 1 : 0.65,
+            transition: 'all 0.15s ease'
+          }}
+          title={isSelected ? "Deseleziona" : "Seleziona"}
+        >
+          {isSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+        </div>
 
         {/* Favorite Heart Button */}
         <button
@@ -1110,58 +1237,203 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       )}
 
       {/* Main Content Area */}
-      {mediaList.length === 0 && !loading ? (
-        <div style={{
-          textAlign: 'center',
-          padding: '80px 20px',
-          background: '#1e293b',
-          borderRadius: '16px',
-          border: '1px dashed #334155'
-        }}>
-          <FolderOpen size={48} color="#64748b" style={{ margin: '0 auto 16px' }} />
-          <h3 style={{ fontSize: '18px', fontWeight: 600 }}>Nessun elemento trovato nel catalogo</h3>
-          <p style={{ color: '#94a3b8', fontSize: '13px', marginTop: '6px' }}>
-            Non ci sono elementi corrispondenti ai filtri o non hai ancora completato una scansione.
-          </p>
-        </div>
-      ) : viewMode === 'timeline' ? (
-        /* Timeline View Mode */
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
-          {Object.entries(timelineGroups).map(([groupTitle, items]) => (
-            <div key={groupTitle} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                borderBottom: '1px solid #334155',
-                paddingBottom: '8px'
-              }}>
-                <Calendar size={18} color="#38bdf8" />
-                <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#f8fafc', margin: 0 }}>
-                  {groupTitle}
-                </h3>
-                <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 500 }}>
-                  — {items.length} {items.length === 1 ? 'elemento' : 'elementi'}
-                </span>
+      <div
+        ref={gridContainerRef}
+        onMouseDown={handleGridMouseDown}
+        style={{ position: 'relative', userSelect: marquee?.isSelecting ? 'none' : 'auto' }}
+      >
+        {mediaList.length === 0 && !loading ? (
+          <div style={{
+            textAlign: 'center',
+            padding: '80px 20px',
+            background: '#1e293b',
+            borderRadius: '16px',
+            border: '1px dashed #334155'
+          }}>
+            <FolderOpen size={48} color="#64748b" style={{ margin: '0 auto 16px' }} />
+            <h3 style={{ fontSize: '18px', fontWeight: 600 }}>Nessun elemento trovato nel catalogo</h3>
+            <p style={{ color: '#94a3b8', fontSize: '13px', marginTop: '6px' }}>
+              Non ci sono elementi corrispondenti ai filtri o non hai ancora completato una scansione.
+            </p>
+          </div>
+        ) : viewMode === 'timeline' ? (
+          /* Timeline View Mode */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+            {Object.entries(timelineGroups).map(([groupTitle, items]) => (
+              <div key={groupTitle} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  borderBottom: '1px solid #334155',
+                  paddingBottom: '8px'
+                }}>
+                  <Calendar size={18} color="#38bdf8" />
+                  <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#f8fafc', margin: 0 }}>
+                    {groupTitle}
+                  </h3>
+                  <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 500 }}>
+                    — {items.length} {items.length === 1 ? 'elemento' : 'elementi'}
+                  </span>
+                </div>
+                <div className="media-grid-container" style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+                  gap: '16px'
+                }}>
+                  {items.map(renderMediaCard)}
+                </div>
               </div>
-              <div className="media-grid-container" style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-                gap: '16px'
-              }}>
-                {items.map(renderMediaCard)}
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        /* Standard Grid View Mode */
-        <div className="media-grid-container" style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-          gap: '16px'
-        }}>
-          {mediaList.map(renderMediaCard)}
+            ))}
+          </div>
+        ) : (
+          /* Standard Grid View Mode */
+          <div className="media-grid-container" style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+            gap: '16px'
+          }}>
+            {mediaList.map(renderMediaCard)}
+          </div>
+        )}
+      </div>
+
+      {/* Marquee Rubber-Band Selection Rectangle */}
+      {marquee && marquee.isSelecting && (
+        <div
+          style={{
+            position: 'fixed',
+            left: Math.min(marquee.startX, marquee.currentX),
+            top: Math.min(marquee.startY, marquee.currentY),
+            width: Math.abs(marquee.currentX - marquee.startX),
+            height: Math.abs(marquee.currentY - marquee.startY),
+            background: 'rgba(56, 189, 248, 0.16)',
+            border: '1.5px solid #38bdf8',
+            borderRadius: '4px',
+            pointerEvents: 'none',
+            zIndex: 9999
+          }}
+        />
+      )}
+
+      {/* Right-Click Context Menu Popup */}
+      {contextMenu && (
+        <div
+          className="context-menu-popup"
+          style={{
+            position: 'fixed',
+            left: contextMenu.x,
+            top: contextMenu.y,
+            background: '#0f172a',
+            border: '1px solid #334155',
+            borderRadius: '10px',
+            padding: '6px',
+            boxShadow: '0 20px 35px -5px rgba(0, 0, 0, 0.7), 0 0 1px 1px rgba(255,255,255,0.05)',
+            zIndex: 10000,
+            minWidth: '220px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '2px',
+            animation: 'fadeInMenu 0.12s ease-out'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div style={{ padding: '6px 10px', fontSize: '11px', fontWeight: 600, color: '#64748b', borderBottom: '1px solid #1e293b', marginBottom: '4px' }}>
+            {selectedIds.size > 1 ? `${selectedIds.size} elementi selezionati` : (contextMenu.media.primary_filename || 'Elemento')}
+          </div>
+
+          {/* Apri Dettaglio */}
+          <button
+            onClick={() => {
+              setSelectedMediaId(contextMenu.media.id);
+              setContextMenu(null);
+            }}
+            className="context-menu-item"
+            style={{
+              display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'transparent', border: 'none', color: '#f8fafc', fontSize: '12px', borderRadius: '6px', cursor: 'pointer', textAlign: 'left', width: '100%'
+            }}
+          >
+            <Eye size={14} color="#38bdf8" /> Apri dettaglio
+          </button>
+
+          {/* Mostra nel Finder */}
+          <button
+            onClick={async () => {
+              const mId = contextMenu.media.id;
+              setContextMenu(null);
+              try {
+                await ApiClient.revealMedia(mId);
+                toast.success('Aperto nel Finder');
+              } catch (err) {
+                toast.error((err as Error).message);
+              }
+            }}
+            className="context-menu-item"
+            style={{
+              display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'transparent', border: 'none', color: '#f8fafc', fontSize: '12px', borderRadius: '6px', cursor: 'pointer', textAlign: 'left', width: '100%'
+            }}
+          >
+            <FolderOpen size={14} color="#38bdf8" /> Mostra nel Finder
+          </button>
+
+          {/* Preferiti */}
+          <button
+            onClick={() => {
+              const makeFav = !contextMenu.media.is_favorite;
+              handleBatchFavorite(makeFav);
+              setContextMenu(null);
+            }}
+            className="context-menu-item"
+            style={{
+              display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'transparent', border: 'none', color: '#f8fafc', fontSize: '12px', borderRadius: '6px', cursor: 'pointer', textAlign: 'left', width: '100%'
+            }}
+          >
+            <Heart size={14} color="#f43f5e" fill={contextMenu.media.is_favorite ? '#f43f5e' : 'none'} />
+            {contextMenu.media.is_favorite ? 'Rimuovi dai Preferiti' : 'Aggiungi ai Preferiti'}
+          </button>
+
+          <div style={{ height: '1px', background: '#1e293b', margin: '4px 0' }} />
+
+          {/* Nuovo Album */}
+          <button
+            onClick={async () => {
+              setContextMenu(null);
+              const name = window.prompt("Nome del nuovo album virtuale:");
+              if (!name || !name.trim()) return;
+              try {
+                const created = await ApiClient.createAlbum(name.trim());
+                await ApiClient.addMediaToAlbum(created.id, Array.from(selectedIds));
+                const updatedAlbums = await ApiClient.getAlbums();
+                setAlbums(updatedAlbums);
+                toast.success(`Album "${created.name}" creato con ${selectedIds.size} foto!`);
+                setSelectedIds(new Set());
+              } catch (err) {
+                toast.error((err as Error).message);
+              }
+            }}
+            className="context-menu-item"
+            style={{
+              display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'transparent', border: 'none', color: '#f8fafc', fontSize: '12px', borderRadius: '6px', cursor: 'pointer', textAlign: 'left', width: '100%'
+            }}
+          >
+            <Folder size={14} color="#a855f7" /> + Crea Album con selezione...
+          </button>
+
+          {/* Deseleziona */}
+          {selectedIds.size > 0 && (
+            <button
+              onClick={() => {
+                setSelectedIds(new Set());
+                setContextMenu(null);
+              }}
+              className="context-menu-item"
+              style={{
+                display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '12px', borderRadius: '6px', cursor: 'pointer', textAlign: 'left', width: '100%', borderTop: '1px solid #1e293b', marginTop: '2px'
+              }}
+            >
+              <X size={14} /> Deseleziona tutto
+            </button>
+          )}
         </div>
       )}
 
