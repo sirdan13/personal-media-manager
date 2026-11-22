@@ -91,6 +91,8 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   const marqueeRef = React.useRef<{
     startX: number;
     startY: number;
+    startScrollTop: number;
+    startScrollLeft: number;
     isSelecting: boolean;
     initialSelected: Set<string>;
     isCardClick: boolean;
@@ -236,24 +238,6 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     setContextMenu({ x, y, media });
   };
 
-  const handleGridMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return;
-    const target = e.target as HTMLElement;
-    if (target.closest('button, input, select, textarea, a, .media-card-checkbox, .media-card-favorite, .floating-batch-bar, .context-menu-popup, .filter-bar-container, .timeline-quick-jump')) {
-      return;
-    }
-    hasDraggedRef.current = false;
-    const isModifier = e.shiftKey || e.metaKey || e.ctrlKey;
-    const isCard = Boolean(target.closest('[data-media-id]'));
-    marqueeRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      isSelecting: false,
-      initialSelected: isModifier ? new Set(selectedIds) : new Set(),
-      isCardClick: isCard
-    };
-  };
-
   // Close context menu on outside clicks / scroll / Escape
   useEffect(() => {
     if (!contextMenu) return;
@@ -271,11 +255,51 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     };
   }, [contextMenu]);
 
-  // Global Marquee drag-selection
+  // Global Marquee drag-selection (works from main padding, above cards, between cards, and across cards)
   useEffect(() => {
+    const handleGlobalMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      if (selectedMediaId !== null) return;
+
+      const target = e.target as HTMLElement;
+      if (!target) return;
+
+      // Exclude interactive widgets and navigation
+      const isExcluded = Boolean(
+        target.closest(
+          'aside, .sidebar-desktop, .sidebar-open, ' +
+          'header, .topbar-container, ' +
+          '.modal-overlay, .modal-card, ' +
+          'button, input, select, textarea, a, ' +
+          '.media-card-checkbox, .media-card-favorite, ' +
+          '.floating-batch-bar, .context-menu-popup, ' +
+          '.filter-bar-container, .timeline-quick-jump'
+        )
+      );
+      if (isExcluded) return;
+
+      // Ensure click is within main content area
+      const mainEl = target.closest('.main-content-layout') as HTMLElement | null;
+      if (!mainEl) return;
+
+      hasDraggedRef.current = false;
+      const isModifier = e.shiftKey || e.metaKey || e.ctrlKey;
+      const isCard = Boolean(target.closest('[data-media-id]'));
+
+      marqueeRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        startScrollTop: mainEl.scrollTop,
+        startScrollLeft: mainEl.scrollLeft,
+        isSelecting: false,
+        initialSelected: isModifier ? new Set(selectedIds) : new Set(),
+        isCardClick: isCard
+      };
+    };
+
     const handleMouseMove = (e: MouseEvent) => {
       if (!marqueeRef.current) return;
-      const { startX, startY, isSelecting, initialSelected } = marqueeRef.current;
+      const { startX, startY, startScrollTop, startScrollLeft, isSelecting, initialSelected } = marqueeRef.current;
       const dist = Math.hypot(e.clientX - startX, e.clientY - startY);
 
       if (!isSelecting && dist < 6) {
@@ -286,10 +310,16 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       marqueeRef.current.isSelecting = true;
       hasDraggedRef.current = true;
 
-      const boxLeft = Math.min(startX, e.clientX);
-      const boxTop = Math.min(startY, e.clientY);
-      const boxRight = Math.max(startX, e.clientX);
-      const boxBottom = Math.max(startY, e.clientY);
+      const mainEl = document.querySelector('.main-content-layout') as HTMLElement | null;
+      const scrollDeltaY = mainEl ? mainEl.scrollTop - startScrollTop : 0;
+      const scrollDeltaX = mainEl ? mainEl.scrollLeft - startScrollLeft : 0;
+      const anchorX = startX - scrollDeltaX;
+      const anchorY = startY - scrollDeltaY;
+
+      const boxLeft = Math.min(anchorX, e.clientX);
+      const boxTop = Math.min(anchorY, e.clientY);
+      const boxRight = Math.max(anchorX, e.clientX);
+      const boxBottom = Math.max(anchorY, e.clientY);
 
       setMarqueeBox({
         left: boxLeft,
@@ -343,15 +373,18 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       }
     };
 
+    window.addEventListener('mousedown', handleGlobalMouseDown);
     window.addEventListener('mousemove', handleMouseMove, { passive: false });
     window.addEventListener('mouseup', handleMouseUp);
     window.addEventListener('dragstart', handleDragStart);
+
     return () => {
+      window.removeEventListener('mousedown', handleGlobalMouseDown);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('dragstart', handleDragStart);
     };
-  }, []);
+  }, [selectedMediaId, selectedIds]);
 
   const handleSelectAll = () => {
     if (selectedIds.size === mediaList.length) {
@@ -628,7 +661,6 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
   return (
     <div
-      onMouseDown={handleGridMouseDown}
       style={{
         display: 'flex',
         flexDirection: 'column',
