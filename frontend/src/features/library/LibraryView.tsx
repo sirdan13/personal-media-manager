@@ -86,6 +86,36 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   const [purgingMissing, setPurgingMissing] = useState<boolean>(false);
   const [missingSummary, setMissingSummary] = useState<{ total_missing_files: number; orphan_media_count: number } | null>(null);
   const [reloadTick, setReloadTick] = useState<number>(0);
+  const [gridSize, setGridSize] = useState<number>(() => {
+    const saved = localStorage.getItem('pmm_grid_size');
+    const parsed = saved ? parseInt(saved, 10) : 220;
+    return isNaN(parsed) ? 220 : Math.min(320, Math.max(130, parsed));
+  });
+
+  useEffect(() => {
+    localStorage.setItem('pmm_grid_size', String(gridSize));
+  }, [gridSize]);
+
+  // Grid keyboard shortcuts (Space = QuickLook, F = Favorite, Escape = Deselect)
+  useEffect(() => {
+    const handleGridKeyDown = (e: KeyboardEvent) => {
+      if (selectedMediaId !== null) return;
+      const target = e.target as HTMLElement;
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName)) return;
+
+      if (e.key === ' ' && selectedIds.size > 0) {
+        e.preventDefault();
+        setSelectedMediaId(Array.from(selectedIds)[0]);
+      } else if ((e.key === 'f' || e.key === 'F') && selectedIds.size > 0) {
+        e.preventDefault();
+        handleBatchFavorite(true);
+      } else if (e.key === 'Escape' && selectedIds.size > 0) {
+        setSelectedIds(new Set());
+      }
+    };
+    window.addEventListener('keydown', handleGridKeyDown);
+    return () => window.removeEventListener('keydown', handleGridKeyDown);
+  }, [selectedMediaId, selectedIds]);
   const [hoveredLiveMediaId, setHoveredLiveMediaId] = useState<string | null>(null);
 
   // Context Menu state
@@ -604,7 +634,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     >
       {/* Thumbnail / Video Container */}
       <div className="media-card-thumb" style={{
-        height: '170px',
+        height: `${Math.round(gridSize * 0.78)}px`,
         background: '#090d16',
         display: 'flex',
         alignItems: 'center',
@@ -700,7 +730,8 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         </button>
       </div>
 
-      {/* Media Details Footer */}
+      {/* Media Details Footer (hidden in compact Apple Photos mode when gridSize < 160) */}
+      {gridSize >= 160 && (
       <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
         <div style={{
           fontSize: '13px',
@@ -747,6 +778,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           </div>
         </div>
       </div>
+      )}
     </div>
     );
   };
@@ -1214,6 +1246,46 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               <option value="size_asc">Dimensione (minore)</option>
             </select>
           </div>
+
+          {/* Grid Zoom Slider */}
+          <div
+            title={`Dimensione miniature: ${gridSize}px`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: '#0f172a',
+              border: '1px solid #334155',
+              borderRadius: '8px',
+              padding: '5px 10px'
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setGridSize((s) => Math.max(130, s - 20))}
+              style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '13px', fontWeight: 700, padding: '0 2px' }}
+              title="Rimpicciolisci miniature"
+            >
+              -
+            </button>
+            <input
+              type="range"
+              min={130}
+              max={320}
+              step={10}
+              value={gridSize}
+              onChange={(e) => setGridSize(Number(e.target.value))}
+              style={{ width: '74px', accentColor: '#38bdf8', cursor: 'pointer' }}
+            />
+            <button
+              type="button"
+              onClick={() => setGridSize((s) => Math.min(320, s + 20))}
+              style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '13px', fontWeight: 700, padding: '0 2px' }}
+              title="Ingrandisci miniature"
+            >
+              +
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1594,8 +1666,8 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 </div>
                 <div className="media-grid-container" style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-                  gap: '16px'
+                  gridTemplateColumns: `repeat(auto-fill, minmax(${gridSize}px, 1fr))`,
+                  gap: gridSize < 160 ? '8px' : '16px'
                 }}>
                   {items.map(renderMediaCard)}
                 </div>
@@ -1606,8 +1678,8 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           /* Standard Grid View Mode */
           <div className="media-grid-container" style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-            gap: '16px'
+            gridTemplateColumns: `repeat(auto-fill, minmax(${gridSize}px, 1fr))`,
+            gap: gridSize < 160 ? '8px' : '16px'
           }}>
             {mediaList.map(renderMediaCard)}
           </div>

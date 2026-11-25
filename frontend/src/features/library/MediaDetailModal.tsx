@@ -138,7 +138,8 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName)) {
         return;
       }
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' || e.key === ' ') {
+        e.preventDefault();
         onClose();
       } else if (e.key === 'ArrowLeft') {
         if (hasPrev && onPrev) onPrev();
