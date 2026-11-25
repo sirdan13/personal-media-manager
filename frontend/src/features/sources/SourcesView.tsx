@@ -175,6 +175,25 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
     }
   };
 
+  const [verifyingSourceId, setVerifyingSourceId] = useState<string | null>(null);
+
+  const handleVerifySource = async (s: any) => {
+    try {
+      setVerifyingSourceId(s.id);
+      const res = await ApiClient.verifySources(s.id);
+      if (res.newly_missing > 0 || res.restored_available > 0) {
+        toast.info(`"${s.name}": ${res.newly_missing} file mancanti rilevati, ${res.restored_available} ripristinati.`);
+      } else {
+        toast.success(`"${s.name}" integro (${res.checked_files} file verificati).`);
+      }
+      await loadSources();
+    } catch (err: any) {
+      toast.error(err?.message || 'Errore verifica disco');
+    } finally {
+      setVerifyingSourceId(null);
+    }
+  };
+
   const handleDeleteSource = async (sourceId: string, sourceName: string) => {
     const confirmed = window.confirm(
       `Sei sicuro di voler eliminare la fonte "${sourceName}" dal catalogo?\n\n` +
@@ -737,28 +756,51 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
               {/* Action Buttons Footer */}
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 {s.status === 'online' ? (
-                  <button
-                    onClick={() => onStartScanForSource(s)}
-                    style={{
-                      flex: 1,
-                      background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '10px',
-                      padding: '10px 14px',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '7px',
-                      cursor: 'pointer',
-                      boxShadow: '0 2px 8px rgba(2, 132, 199, 0.3)'
-                    }}
-                  >
-                    <Play size={14} fill="white" />
-                    Scansiona
-                  </button>
+                  <>
+                    <button
+                      onClick={() => onStartScanForSource(s)}
+                      style={{
+                        flex: 1,
+                        background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '10px',
+                        padding: '10px 14px',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '7px',
+                        cursor: 'pointer',
+                        boxShadow: '0 2px 8px rgba(2, 132, 199, 0.3)'
+                      }}
+                    >
+                      <Play size={14} fill="white" />
+                      Scansiona
+                    </button>
+                    <button
+                      onClick={() => handleVerifySource(s)}
+                      disabled={verifyingSourceId === s.id}
+                      title="Verifica Integrità (<1s): rileva file eliminati dal Finder"
+                      style={{
+                        padding: '10px 12px',
+                        background: '#1e293b',
+                        color: '#38bdf8',
+                        border: '1px solid #334155',
+                        borderRadius: '10px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        cursor: verifyingSourceId === s.id ? 'wait' : 'pointer'
+                      }}
+                    >
+                      <RefreshCw size={13} className={verifyingSourceId === s.id ? 'spin' : ''} />
+                      {verifyingSourceId === s.id ? '...' : 'Verifica'}
+                    </button>
+                  </>
                 ) : (
                   <button
                     onClick={() => handleCheckDriveConnection(s)}

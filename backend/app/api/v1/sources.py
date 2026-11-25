@@ -14,7 +14,9 @@ from app.services.source_service import (
     reconcile_source_files,
     browse_server_filesystem,
     get_source_folders,
-    exclude_and_purge_paths
+    exclude_and_purge_paths,
+    quick_verify_sources,
+    purge_missing_records
 )
 from app.api.deps import get_current_user
 from app.models.entities import User
@@ -25,6 +27,13 @@ class ReconcileRequest(BaseModel):
 class ExclusionRequest(BaseModel):
     excluded_paths: str
     purge_existing: bool = True
+
+class VerifySourcesRequest(BaseModel):
+    source_id: Optional[str] = None
+
+class PurgeMissingRequest(BaseModel):
+    source_id: Optional[str] = None
+    media_ids: Optional[List[str]] = None
 
 router = APIRouter(prefix="/sources", tags=["Fonti & Archivi"])
 
@@ -53,6 +62,29 @@ def add_source(
 ):
     source = create_source(db, current_user.id, source_in)
     return SourceOut.model_validate(source)
+
+@router.post("/verify")
+def verify_sources_endpoint(
+    payload: Optional[VerifySourcesRequest] = Body(default=None),
+    source_id: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    target_source_id = (payload.source_id if payload else None) or source_id
+    return quick_verify_sources(db, current_user.id, source_id=target_source_id)
+
+@router.post("/purge-missing")
+def purge_missing_endpoint(
+    payload: Optional[PurgeMissingRequest] = Body(default=None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return purge_missing_records(
+        db,
+        current_user.id,
+        source_id=payload.source_id if payload else None,
+        media_ids=payload.media_ids if payload else None
+    )
 
 @router.get("/{source_id}", response_model=SourceOut)
 def get_source(

@@ -18,6 +18,8 @@ RAW_EXTENSIONS = {
 INACTIVE_FILE_STATUSES = ("missing", "trashed")
 
 def compute_protection_status(copies_count: int, distinct_sources_count: int) -> str:
+    if copies_count <= 0:
+        return "missing"
     if copies_count > distinct_sources_count:
         return "intra_source_duplicate"
     if distinct_sources_count >= 2:
@@ -57,8 +59,8 @@ def list_user_media(
 
     query = db.query(
         Media,
-        func.coalesce(prot_global.c.c_files, 1).label("copies_count"),
-        func.coalesce(prot_global.c.c_sources, 1).label("distinct_sources_count"),
+        func.coalesce(prot_global.c.c_files, 0).label("copies_count"),
+        func.coalesce(prot_global.c.c_sources, 0).label("distinct_sources_count"),
         func.count(func.distinct(Thumbnail.id)).label("thumb_count"),
         func.min(File.filename).label("primary_filename"),
         func.min(File.extension).label("primary_extension"),
@@ -89,7 +91,6 @@ def list_user_media(
         
     if search:
         s = f"%{search.strip()}%"
-        from sqlalchemy import or_, exists
         tag_match_subq = exists().where(
             MediaTag.media_id == Media.id,
             MediaTag.tag_id == Tag.id,
@@ -127,9 +128,22 @@ def list_user_media(
     if lon_min is not None and lon_max is not None:
         query = query.filter(Media.longitude >= lon_min, Media.longitude <= lon_max)
 
-    if protection_status:
+    if protection_status == "missing":
+        from sqlalchemy.orm import aliased
+        FileMissing = aliased(File)
+        missing_file_exists = exists().where(
+            FileMissing.media_id == Media.id,
+            FileMissing.availability_status == "missing"
+        )
+        query = query.filter(
+            func.coalesce(prot_global.c.c_files, 0) == 0,
+            missing_file_exists
+        )
+    else:
+        # Exclude completely missing/trashed orphan media from normal library views
+        query = query.filter(func.coalesce(prot_global.c.c_files, 0) >= 1)
         if protection_status == "unprotected":
-            query = query.filter(and_(prot_global.c.c_sources <= 1, prot_global.c.c_files <= 1))
+            query = query.filter(and_(prot_global.c.c_sources == 1, prot_global.c.c_files == 1))
         elif protection_status == "protected":
             query = query.filter(and_(prot_global.c.c_sources >= 2, prot_global.c.c_files == prot_global.c.c_sources))
         elif protection_status == "intra_source_duplicate":
@@ -159,8 +173,8 @@ def list_user_media(
 
     results = []
     for media, copies_count, distinct_sources_count, thumb_count, p_filename, p_extension, p_size in rows:
-        c_count = int(copies_count or 1)
-        s_count = int(distinct_sources_count or 1)
+        c_count = int(copies_count or 0)
+        s_count = int(distinct_sources_count or 0)
         prot_status = compute_protection_status(c_count, s_count)
         results.append(MediaOut(
             id=media.id,
@@ -259,12 +273,8 @@ def get_media_detail(db: Session, user_id: str, media_id: str) -> MediaDetailOut
     media_tags = [MediaAlbumTagItem(id=t_id, name=t_name, color=t_color) for t_id, t_name, t_color in tag_rows]
 
     active_files = [f for f in file_outs if f.availability_status not in INACTIVE_FILE_STATUSES]
-    if active_files:
-        c_count = len(active_files)
-        s_count = len({f.source_id for f in active_files})
-    else:
-        c_count = len(file_outs)
-        s_count = len({f.source_id for f in file_outs}) if file_outs else 1
+    c_count = len(active_files)
+    s_count = len({f.source_id for f in active_files})
     prot_status = compute_protection_status(c_count, s_count)
 
     return MediaDetailOut(
@@ -657,46 +667,67 @@ def compute_backup_gap(
     }
 
 def get_dashboard_stats(db: Session, user_id: str) -> Dict[str, Any]:
+    active_media_exists = exists().where(
+        File.media_id == Media.id,
+        File.availability_status.notin_(INACTIVE_FILE_STATUSES)
+    )
+    missing_file_exists = exists().where(
+        File.media_id == Media.id,
+        File.availability_status == "missing"
+    )
+
     total_photos = db.query(func.count(Media.id))\
-                     .filter(Media.user_id == user_id, Media.media_type == "image").scalar() or 0
+                     .filter(Media.user_id == user_id, Media.media_type == "image", active_media_exists).scalar() or 0
     total_videos = db.query(func.count(Media.id))\
-                     .filter(Media.user_id == user_id, Media.media_type == "video").scalar() or 0
+                     .filter(Media.user_id == user_id, Media.media_type == "video", active_media_exists).scalar() or 0
     total_sources = db.query(func.count(Source.id))\
                       .filter(Source.user_id == user_id).scalar() or 0
     
     total_physical_copies = db.query(func.count(File.id))\
                               .join(Media, File.media_id == Media.id)\
-                              .filter(Media.user_id == user_id).scalar() or 0
+                              .filter(Media.user_id == user_id, File.availability_status.notin_(INACTIVE_FILE_STATUSES)).scalar() or 0
     
     total_unique_media = total_photos + total_videos
     duplicate_copies = max(0, total_physical_copies - total_unique_media)
 
     total_bytes = db.query(func.sum(File.size_bytes))\
                     .join(Media, File.media_id == Media.id)\
-                    .filter(Media.user_id == user_id).scalar() or 0
+                    .filter(Media.user_id == user_id, File.availability_status.notin_(INACTIVE_FILE_STATUSES)).scalar() or 0
 
     thumb_subq = db.query(Thumbnail.media_id)
     missing_thumbnails_count = db.query(func.count(Media.id))\
-                                 .filter(Media.user_id == user_id, ~Media.id.in_(thumb_subq))\
+                                 .filter(Media.user_id == user_id, active_media_exists, ~Media.id.in_(thumb_subq))\
                                  .scalar() or 0
 
     geotagged_count = db.query(func.count(Media.id))\
-                        .filter(Media.user_id == user_id, Media.latitude.isnot(None))\
+                        .filter(Media.user_id == user_id, active_media_exists, Media.latitude.isnot(None))\
                         .scalar() or 0
 
     favorites_count = db.query(func.count(Media.id))\
-                        .filter(Media.user_id == user_id, Media.is_favorite == True)\
+                        .filter(Media.user_id == user_id, active_media_exists, Media.is_favorite == True)\
                         .scalar() or 0
 
     live_photos_count = db.query(func.count(Media.id))\
-                          .filter(Media.user_id == user_id, Media.is_live_photo == True)\
+                          .filter(Media.user_id == user_id, active_media_exists, Media.is_live_photo == True)\
                           .scalar() or 0
 
     raw_exts = RAW_EXTENSIONS | {f".{ext}" for ext in RAW_EXTENSIONS}
     raw_count = db.query(func.count(func.distinct(Media.id)))\
                   .join(File, Media.id == File.media_id)\
-                  .filter(Media.user_id == user_id, func.lower(File.extension).in_(raw_exts))\
+                  .filter(
+                      Media.user_id == user_id,
+                      File.availability_status.notin_(INACTIVE_FILE_STATUSES),
+                      func.lower(File.extension).in_(raw_exts)
+                  )\
                   .scalar() or 0
+
+    missing_media_count = db.query(func.count(Media.id))\
+                            .filter(Media.user_id == user_id, ~active_media_exists, missing_file_exists)\
+                            .scalar() or 0
+    missing_files_count = db.query(func.count(File.id))\
+                            .join(Media, File.media_id == Media.id)\
+                            .filter(Media.user_id == user_id, File.availability_status == "missing")\
+                            .scalar() or 0
 
     dup_summary = get_duplicates_summary(db, user_id)
     recoverable_duplicate_bytes = dup_summary.get("total_recoverable_bytes", 0)
@@ -707,7 +738,7 @@ def get_dashboard_stats(db: Session, user_id: str) -> Dict[str, Any]:
         src_stats = db.query(
             func.count(File.id).label("file_count"),
             func.coalesce(func.sum(File.size_bytes), 0).label("total_bytes")
-        ).filter(File.source_id == src.id).first()
+        ).filter(File.source_id == src.id, File.availability_status.notin_(INACTIVE_FILE_STATUSES)).first()
         storage_by_source.append({
             "source_id": src.id,
             "source_name": src.name,
@@ -725,6 +756,8 @@ def get_dashboard_stats(db: Session, user_id: str) -> Dict[str, Any]:
         "duplicate_copies": duplicate_copies,
         "total_bytes_indexed": total_bytes,
         "missing_thumbnails_count": missing_thumbnails_count,
+        "missing_media_count": missing_media_count,
+        "missing_files_count": missing_files_count,
         "geotagged_count": geotagged_count,
         "favorites_count": favorites_count,
         "raw_count": raw_count,

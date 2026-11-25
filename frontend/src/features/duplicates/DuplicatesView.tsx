@@ -799,6 +799,41 @@ export const DuplicatesView: React.FC = () => {
     }
   };
 
+  const [emptyingTrash, setEmptyingTrash] = useState<boolean>(false);
+
+  const handleEmptyTrash = async (sourceId?: string) => {
+    const totalBytes = sourceId
+      ? (trashData?.by_source?.find((s: any) => s.source_id === sourceId)?.bytes ?? 0)
+      : (trashData?.total_bytes ?? 0);
+    const totalFiles = sourceId
+      ? (trashData?.by_source?.find((s: any) => s.source_id === sourceId)?.count ?? 0)
+      : (trashData?.total_count ?? 0);
+
+    if (totalFiles === 0) return;
+
+    const confirmed = window.confirm(
+      `ATTENZIONE — AZIONE IRREVERSIBILE\n\n` +
+      `Stai per eliminare DEFINITIVAMENTE dal disco ${totalFiles} file presenti in .pmm_trash (${formatBytes(totalBytes)}).\n` +
+      `Lo spazio verrà liberato fisicamente e i file non potranno più essere ripristinati.\n\nVuoi procedere?`
+    );
+    if (!confirmed) return;
+
+    setEmptyingTrash(true);
+    try {
+      const res = await ApiClient.emptyTrash(sourceId ? { source_id: sourceId } : undefined);
+      if (res.errors && res.errors.length > 0) {
+        toast.info(`Eliminati ${res.deleted_files_count} file (${formatBytes(res.freed_bytes)} liberati). ${res.errors.length} dischi offline o errori.`);
+      } else {
+        toast.success(`Cestino svuotato! Eliminati ${res.deleted_files_count} file e liberati ${formatBytes(res.freed_bytes)} su disco.`);
+      }
+      await Promise.all([loadTrash(), loadSummary()]);
+    } catch (err: any) {
+      toast.error(err?.message || 'Errore durante lo svuotamento del cestino');
+    } finally {
+      setEmptyingTrash(false);
+    }
+  };
+
   const handleExportGap = async (format: 'csv' | 'json' | 'rsync_txt') => {
     if (!primarySourceId || !backupSourceId) return;
     try {
@@ -3110,30 +3145,54 @@ export const DuplicatesView: React.FC = () => {
                 Elenco File in Quarantena ({trashData?.total_count || 0})
               </h4>
 
-              {trashData?.items && trashData.items.length > 1 && (
-                <button
-                  onClick={() => {
-                    const allIds = trashData.items.filter((i: any) => i.is_source_online).map((i: any) => i.file_id);
-                    handleRestoreFiles(allIds);
-                  }}
-                  style={{
-                    background: 'rgba(34, 197, 94, 0.2)',
-                    color: '#22c55e',
-                    border: '1px solid rgba(34, 197, 94, 0.4)',
-                    borderRadius: '6px',
-                    padding: '6px 14px',
-                    fontSize: '12px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px'
-                  }}
-                >
-                  <RotateCcw size={13} />
-                  Ripristina Tutti i File ({trashData.items.length})
-                </button>
-              )}
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                {trashData?.items && trashData.items.length > 1 && (
+                  <button
+                    onClick={() => {
+                      const allIds = trashData.items.filter((i: any) => i.is_source_online).map((i: any) => i.file_id);
+                      handleRestoreFiles(allIds);
+                    }}
+                    style={{
+                      background: 'rgba(34, 197, 94, 0.2)',
+                      color: '#22c55e',
+                      border: '1px solid rgba(34, 197, 94, 0.4)',
+                      borderRadius: '6px',
+                      padding: '6px 14px',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <RotateCcw size={13} />
+                    Ripristina Tutti i File ({trashData.items.length})
+                  </button>
+                )}
+                {trashData?.items && trashData.items.length > 0 && (
+                  <button
+                    onClick={() => handleEmptyTrash()}
+                    disabled={emptyingTrash}
+                    style={{
+                      background: '#e11d48',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '6px 14px',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: emptyingTrash ? 'wait' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <Trash2 size={13} />
+                    {emptyingTrash ? 'Svuotamento...' : `Svuota Cestino Definitivamente (${formatBytes(trashData.total_bytes || 0)})`}
+                  </button>
+                )}
+              </div>
             </div>
 
             {loadingTrash ? (

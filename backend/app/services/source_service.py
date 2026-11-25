@@ -1,13 +1,35 @@
 import os
 import platform
 import fnmatch
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Set
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, exists
 from fastapi import HTTPException, status
-from app.models.entities import Source, File, Thumbnail, Media
+from app.models.entities import Source, File, Thumbnail, Media, AlbumMedia, MediaTag
 from app.core.config import settings
 from app.schemas.source import SourceCreate, SourceUpdate, SourceOut
+
+def cleanup_orphan_media_ids(db: Session, media_ids: Set[str]) -> int:
+    """Deletes orphan Media records (with 0 remaining File records) along with thumbnails, albums, and tags."""
+    purged_media_count = 0
+    for m_id in media_ids:
+        remaining = db.query(File).filter(File.media_id == m_id).count()
+        if remaining == 0:
+            thumbs = db.query(Thumbnail).filter(Thumbnail.media_id == m_id).all()
+            for t in thumbs:
+                if t.storage_path:
+                    disk_path = os.path.join(settings.THUMBNAILS_DIR, t.storage_path)
+                    if os.path.exists(disk_path):
+                        try:
+                            os.remove(disk_path)
+                        except Exception:
+                            pass
+                db.delete(t)
+            db.query(AlbumMedia).filter(AlbumMedia.media_id == m_id).delete(synchronize_session=False)
+            db.query(MediaTag).filter(MediaTag.media_id == m_id).delete(synchronize_session=False)
+            db.query(Media).filter(Media.id == m_id).delete(synchronize_session=False)
+            purged_media_count += 1
+    return purged_media_count
 
 def resolve_safe_source_file(root_path: str, relative_path: str) -> Optional[str]:
     if not root_path or not relative_path:
@@ -172,25 +194,155 @@ def reconcile_source_files(db: Session, user_id: str, source_id: str, seen_paths
     marked_missing = 0
     restored_available = 0
     total_active = 0
+    moved_cleaned = 0
+
+    active_sha256s = set()
+    missing_candidates = []
 
     for f in files:
         if f.relative_path not in seen_set:
             if f.availability_status not in ("missing", "trashed"):
                 f.availability_status = "missing"
                 marked_missing += 1
+            if f.availability_status == "missing":
+                missing_candidates.append(f)
         else:
             total_active += 1
+            active_sha256s.add(f.sha256)
             if f.availability_status in ("missing", "trashed"):
                 f.availability_status = "available"
                 f.trash_relative_path = None
                 f.trashed_at = None
                 restored_available += 1
 
+    # Move/rename detection: if a missing file on this source has an active counterpart with identical SHA-256 on the same source, remove the dead missing reference
+    for mf in missing_candidates:
+        if mf.sha256 and mf.sha256 in active_sha256s:
+            db.delete(mf)
+            moved_cleaned += 1
+
     db.commit()
     return {
         "marked_missing": marked_missing,
         "restored_available": restored_available,
+        "moved_cleaned": moved_cleaned,
         "total_active": total_active
+    }
+
+def quick_verify_sources(db: Session, user_id: str, source_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Fast O(N) os.path.isfile verification of indexed files on currently online sources.
+    Detects externally deleted or restored files in <1s without hashing or thumbnailing.
+    """
+    query = db.query(Source).filter(Source.user_id == user_id)
+    if source_id:
+        get_source_by_id(db, user_id, source_id)
+        query = query.filter(Source.id == source_id)
+    sources = query.all()
+
+    checked_sources = 0
+    checked_files = 0
+    newly_missing = 0
+    restored_available = 0
+
+    for s in sources:
+        if not s.root_path or not os.path.isdir(s.root_path):
+            if s.root_path and s.status != "offline":
+                s.status = "offline"
+            continue
+
+        if s.status == "offline":
+            s.status = "online"
+
+        checked_sources += 1
+        files = db.query(File).filter(
+            File.source_id == s.id,
+            File.availability_status != "trashed"
+        ).all()
+
+        for f in files:
+            checked_files += 1
+            full_path = os.path.join(s.root_path, f.relative_path)
+            exists_on_disk = os.path.isfile(full_path)
+            if not exists_on_disk:
+                if f.availability_status == "available":
+                    f.availability_status = "missing"
+                    newly_missing += 1
+            else:
+                if f.availability_status == "missing":
+                    f.availability_status = "available"
+                    restored_available += 1
+
+    db.commit()
+
+    total_missing_files = (
+        db.query(func.count(File.id))
+        .join(Media, File.media_id == Media.id)
+        .filter(Media.user_id == user_id, File.availability_status == "missing")
+        .scalar() or 0
+    )
+
+    active_media_exists = exists().where(
+        File.media_id == Media.id,
+        File.availability_status.notin_(("missing", "trashed"))
+    )
+    missing_file_exists = exists().where(
+        File.media_id == Media.id,
+        File.availability_status == "missing"
+    )
+    orphan_media_count = (
+        db.query(func.count(Media.id))
+        .filter(Media.user_id == user_id, ~active_media_exists, missing_file_exists)
+        .scalar() or 0
+    )
+
+    return {
+        "checked_sources": checked_sources,
+        "checked_files": checked_files,
+        "newly_missing": newly_missing,
+        "restored_available": restored_available,
+        "total_missing_files": total_missing_files,
+        "orphan_media_count": orphan_media_count
+    }
+
+def purge_missing_records(
+    db: Session,
+    user_id: str,
+    source_id: Optional[str] = None,
+    media_ids: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """
+    Removes File records marked as 'missing' from the catalog and cleans up any Media
+    records (and their thumbnails) that are left with 0 remaining File records.
+    """
+    query = (
+        db.query(File)
+        .join(Media, File.media_id == Media.id)
+        .filter(Media.user_id == user_id, File.availability_status == "missing")
+    )
+    if source_id:
+        get_source_by_id(db, user_id, source_id)
+        query = query.filter(File.source_id == source_id)
+    if media_ids:
+        query = query.filter(File.media_id.in_(media_ids))
+
+    files_to_delete = query.all()
+    if not files_to_delete:
+        return {"purged_files_count": 0, "purged_orphan_media_count": 0}
+
+    affected_media_ids = {f.media_id for f in files_to_delete}
+    purged_files_count = len(files_to_delete)
+
+    for f in files_to_delete:
+        db.delete(f)
+    db.flush()
+
+    purged_orphan_media_count = cleanup_orphan_media_ids(db, affected_media_ids)
+    db.commit()
+
+    return {
+        "purged_files_count": purged_files_count,
+        "purged_orphan_media_count": purged_orphan_media_count
     }
 
 def is_path_excluded(rel_path: str, excluded_patterns: List[str]) -> bool:

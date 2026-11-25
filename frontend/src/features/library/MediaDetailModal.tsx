@@ -829,40 +829,43 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
                               {f.source_name || 'Disco'}
                             </span>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px' }}>
-                              <span style={{
-                                width: '6px',
-                                height: '6px',
-                                borderRadius: '50%',
-                                background: isOffline ? '#64748b' : '#22c55e',
-                                flexShrink: 0
-                              }} />
-                              <span style={{ color: isOffline ? '#94a3b8' : '#22c55e', fontWeight: 500 }}>
-                                {isOffline ? 'Offline' : 'Online'}
-                              </span>
-                              {isMissing && (
-                                <span style={{ color: '#f43f5e', fontSize: '10px', fontWeight: 600, background: 'rgba(244, 63, 94, 0.15)', padding: '1px 5px', borderRadius: '3px' }}>
-                                  Rimosso
+                              {isMissing ? (
+                                <span style={{ color: '#fda4af', fontSize: '10px', fontWeight: 700, background: 'rgba(244, 63, 94, 0.2)', border: '1px solid rgba(244, 63, 94, 0.4)', padding: '2px 6px', borderRadius: '4px' }}>
+                                  ELIMINATO DAL DISCO
                                 </span>
+                              ) : (
+                                <>
+                                  <span style={{
+                                    width: '6px',
+                                    height: '6px',
+                                    borderRadius: '50%',
+                                    background: isOffline ? '#64748b' : '#22c55e',
+                                    flexShrink: 0
+                                  }} />
+                                  <span style={{ color: isOffline ? '#94a3b8' : '#22c55e', fontWeight: 500 }}>
+                                    {isOffline ? 'Offline' : 'Online'}
+                                  </span>
+                                </>
                               )}
                             </div>
                           </div>
 
                           {/* Percorso relativo */}
                           <div style={{
-                            color: '#94a3b8',
+                            color: isMissing ? '#f87171' : '#94a3b8',
                             fontSize: '11px',
                             fontFamily: 'monospace',
                             wordBreak: 'break-all',
                             background: '#020617',
                             padding: '4px 8px',
                             borderRadius: '4px',
-                            border: '1px solid #1e293b',
+                            border: isMissing ? '1px solid rgba(244, 63, 94, 0.35)' : '1px solid #1e293b',
                             display: 'flex',
                             alignItems: 'center',
                             gap: '6px'
                           }}>
                             <Folder size={11} color="#64748b" style={{ flexShrink: 0 }} />
-                            <span style={{ flex: 1, minWidth: 0 }}>{f.relative_path}</span>
+                            <span style={{ flex: 1, minWidth: 0, textDecoration: isMissing ? 'line-through' : 'none' }}>{f.relative_path}</span>
                           </div>
 
                           {/* Footer riga copia: Dimensione, Data e Azione Finder */}
@@ -871,6 +874,37 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
                               {formatBytes(f.size_bytes)}
                             </span>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              {isMissing && (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    try {
+                                      await ApiClient.purgeMissingRecords({ source_id: f.source_id, media_ids: [data.id] });
+                                      toast.success('Riferimento morto rimosso dal catalogo');
+                                      const refreshed = await ApiClient.getMediaDetail(data.id).catch(() => null);
+                                      if (refreshed) {
+                                        setData(refreshed);
+                                      } else {
+                                        onClose();
+                                      }
+                                    } catch (err) {
+                                      toast.error((err as Error).message);
+                                    }
+                                  }}
+                                  style={{
+                                    background: 'rgba(244, 63, 94, 0.15)',
+                                    border: '1px solid rgba(244, 63, 94, 0.45)',
+                                    color: '#fda4af',
+                                    borderRadius: '4px',
+                                    padding: '3px 8px',
+                                    fontSize: '10px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  Rimuovi riferimento
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => {

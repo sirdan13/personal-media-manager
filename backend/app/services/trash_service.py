@@ -1,14 +1,14 @@
 import os
 import json
 import shutil
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from fastapi import HTTPException, status
 
 from app.models.entities import File, Source, Media, Thumbnail
-from app.services.source_service import get_source_by_id
+from app.services.source_service import get_source_by_id, cleanup_orphan_media_ids
 from app.services.dhash_service import hamming_distance
 
 INACTIVE_FILE_STATUSES = ("missing", "trashed")
@@ -586,5 +586,157 @@ def restore_trashed_files(
         "restored_count": len(restored_items),
         "restored_bytes": sum(x["size_bytes"] for x in restored_items),
         "items": restored_items,
+        "errors": errors
+    }
+
+def empty_trash(
+    db: Session,
+    user_id: str,
+    source_id: Optional[str] = None,
+    file_ids: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """
+    Permanently deletes trashed files inside .pmm_trash/files/ on online sources,
+    removes their File records, and cleans up any Media records left with 0 files.
+    """
+    query = (
+        db.query(File, Source, Media)
+        .join(Source, File.source_id == Source.id)
+        .join(Media, File.media_id == Media.id)
+        .filter(
+            Media.user_id == user_id,
+            File.availability_status == "trashed"
+        )
+    )
+    if source_id:
+        get_source_by_id(db, user_id, source_id)
+        query = query.filter(File.source_id == source_id)
+    if file_ids:
+        query = query.filter(File.id.in_(file_ids))
+
+    rows = query.all()
+    if not rows:
+        return {"deleted_files_count": 0, "freed_bytes": 0, "deleted_media_count": 0, "errors": []}
+
+    deleted_files_count = 0
+    freed_bytes = 0
+    affected_media_ids = set()
+    errors = []
+    now_utc = datetime.now(timezone.utc)
+
+    for f_obj, source, media in rows:
+        if not source.root_path or not os.path.isdir(source.root_path):
+            errors.append({
+                "file_id": f_obj.id,
+                "filename": f_obj.filename,
+                "error": f"La fonte '{source.name}' è offline o non raggiungibile."
+            })
+            continue
+
+        trash_rel = f_obj.trash_relative_path or os.path.join(".pmm_trash", "files", f_obj.relative_path.lstrip("/\\"))
+        trash_full = _resolve_safe_path_in_source(source.root_path, trash_rel)
+
+        try:
+            if trash_full and os.path.isfile(trash_full):
+                os.remove(trash_full)
+                # Also remove sidecars in trash dir if present
+                trash_dir = os.path.dirname(trash_full)
+                base_name, _ = os.path.splitext(f_obj.filename)
+                for sc in (
+                    f"{base_name}.aae", f"{base_name}.AAE",
+                    f"{base_name}.xmp", f"{base_name}.XMP",
+                    f"{f_obj.filename}.xmp", f"{f_obj.filename}.XMP"
+                ):
+                    sc_path = os.path.join(trash_dir, sc)
+                    if os.path.isfile(sc_path):
+                        try:
+                            os.remove(sc_path)
+                        except Exception:
+                            pass
+
+            _append_manifest_log(source.root_path, {
+                "timestamp": now_utc.isoformat(),
+                "action": "empty_trash",
+                "file_id": f_obj.id,
+                "media_id": media.id,
+                "sha256": f_obj.sha256,
+                "original_relative_path": f_obj.relative_path,
+                "trash_relative_path": trash_rel,
+                "size_bytes": f_obj.size_bytes
+            })
+
+            freed_bytes += (f_obj.size_bytes or 0)
+            deleted_files_count += 1
+            affected_media_ids.add(media.id)
+            db.delete(f_obj)
+        except Exception as e:
+            errors.append({
+                "file_id": f_obj.id,
+                "filename": f_obj.filename,
+                "error": f"Errore durante l'eliminazione definitiva: {str(e)}"
+            })
+
+    db.flush()
+    deleted_media_count = cleanup_orphan_media_ids(db, affected_media_ids)
+    db.commit()
+
+    return {
+        "deleted_files_count": deleted_files_count,
+        "freed_bytes": freed_bytes,
+        "deleted_media_count": deleted_media_count,
+        "errors": errors
+    }
+
+def trash_media_items(
+    db: Session,
+    user_id: str,
+    media_ids: List[str],
+    source_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Moves active physical files of selected media items into .pmm_trash/files/ on their respective online disks.
+    """
+    unique_media_ids = list(dict.fromkeys(media_ids or []))
+    if not unique_media_ids:
+        return {"trashed_media_count": 0, "trashed_files_count": 0, "freed_bytes": 0, "items": [], "errors": []}
+
+    query = (
+        db.query(File, Source, Media)
+        .join(Source, File.source_id == Source.id)
+        .join(Media, File.media_id == Media.id)
+        .filter(
+            Media.user_id == user_id,
+            Media.id.in_(unique_media_ids),
+            File.availability_status.notin_(INACTIVE_FILE_STATUSES)
+        )
+    )
+    if source_id:
+        get_source_by_id(db, user_id, source_id)
+        query = query.filter(File.source_id == source_id)
+
+    rows = query.all()
+    if not rows:
+        return {"trashed_media_count": 0, "trashed_files_count": 0, "freed_bytes": 0, "items": [], "errors": []}
+
+    now_utc = datetime.now(timezone.utc)
+    trashed_items = []
+    errors = []
+    trashed_media_ids = set()
+
+    for f_obj, source, media in rows:
+        item, err = _move_file_to_trash(db, f_obj, source, media, now_utc, action="trash_media")
+        if item:
+            trashed_items.append(item)
+            trashed_media_ids.add(media.id)
+        if err:
+            errors.append(err)
+
+    db.commit()
+
+    return {
+        "trashed_media_count": len(trashed_media_ids),
+        "trashed_files_count": len(trashed_items),
+        "freed_bytes": sum(x["size_bytes"] for x in trashed_items),
+        "items": trashed_items,
         "errors": errors
     }

@@ -123,9 +123,33 @@ export class ApiClient {
   }
 
   public static async reconcileSource(sourceId: string, seenPaths: string[]) {
-    return this.request<{ marked_missing: number; restored_available: number; total_active: number }>(`/sources/${sourceId}/reconcile`, {
+    return this.request<{ marked_missing: number; restored_available: number; moved_cleaned?: number; total_active: number }>(`/sources/${sourceId}/reconcile`, {
       method: 'POST',
       body: JSON.stringify({ seen_paths: seenPaths })
+    });
+  }
+
+  public static async verifySources(sourceId?: string) {
+    return this.request<{
+      checked_sources: number;
+      checked_files: number;
+      newly_missing: number;
+      restored_available: number;
+      total_missing_files: number;
+      orphan_media_count: number;
+    }>('/sources/verify', {
+      method: 'POST',
+      body: JSON.stringify({ source_id: sourceId || null })
+    });
+  }
+
+  public static async purgeMissingRecords(payload?: { source_id?: string; media_ids?: string[] }) {
+    return this.request<{
+      purged_files_count: number;
+      purged_orphan_media_count: number;
+    }>('/sources/purge-missing', {
+      method: 'POST',
+      body: JSON.stringify(payload || {})
     });
   }
 
@@ -282,6 +306,19 @@ export class ApiClient {
     return this.request<{ updated_count: number; is_favorite: boolean }>('/media/batch/favorite', {
       method: 'POST',
       body: JSON.stringify({ media_ids: mediaIds, is_favorite: isFavorite })
+    });
+  }
+
+  public static async batchTrashMedia(mediaIds: string[], sourceId?: string) {
+    return this.request<{
+      trashed_media_count: number;
+      trashed_files_count: number;
+      freed_bytes: number;
+      items: any[];
+      errors: any[];
+    }>('/media/batch/trash', {
+      method: 'POST',
+      body: JSON.stringify({ media_ids: mediaIds, source_id: sourceId || null })
     });
   }
 
@@ -480,6 +517,18 @@ export class ApiClient {
     }>('/duplicates/trash/restore', {
       method: 'POST',
       body: JSON.stringify({ file_ids: fileIds })
+    });
+  }
+
+  public static async emptyTrash(payload?: { source_id?: string; file_ids?: string[] }) {
+    return this.request<{
+      deleted_files_count: number;
+      freed_bytes: number;
+      deleted_media_count: number;
+      errors: any[];
+    }>('/duplicates/trash/empty', {
+      method: 'POST',
+      body: JSON.stringify(payload || {})
     });
   }
 

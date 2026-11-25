@@ -3,7 +3,7 @@ import io
 import json
 from typing import List, Optional
 from pydantic import BaseModel
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Response, Body
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.schemas.media import DuplicateGroupOut
@@ -13,7 +13,8 @@ from app.services.trash_service import (
     trash_duplicate_files,
     trash_similar_media,
     list_trashed_files,
-    restore_trashed_files
+    restore_trashed_files,
+    empty_trash
 )
 from app.api.deps import get_current_user
 from app.models.entities import User, Media, File, Source
@@ -29,6 +30,10 @@ class TrashSimilarRequest(BaseModel):
 
 class RestoreFilesRequest(BaseModel):
     file_ids: List[str]
+
+class EmptyTrashRequest(BaseModel):
+    source_id: Optional[str] = None
+    file_ids: Optional[List[str]] = None
 
 router = APIRouter(prefix="/duplicates", tags=["Duplicati Esatti"])
 
@@ -215,3 +220,16 @@ def restore_duplicates_endpoint(
     db: Session = Depends(get_db)
 ):
     return restore_trashed_files(db, current_user.id, payload.file_ids)
+
+@router.post("/trash/empty")
+def empty_trash_endpoint(
+    payload: Optional[EmptyTrashRequest] = Body(default=None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return empty_trash(
+        db,
+        current_user.id,
+        source_id=payload.source_id if payload else None,
+        file_ids=payload.file_ids if payload else None
+    )

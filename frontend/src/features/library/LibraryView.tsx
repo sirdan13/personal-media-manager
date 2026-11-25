@@ -18,7 +18,10 @@ import {
   MapPin,
   X,
   Check,
-  Eye
+  Eye,
+  RefreshCw,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 import { MediaDetailModal } from './MediaDetailModal';
 
@@ -78,6 +81,10 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   // Batch selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState<boolean>(false);
+  const [verifying, setVerifying] = useState<boolean>(false);
+  const [purgingMissing, setPurgingMissing] = useState<boolean>(false);
+  const [missingSummary, setMissingSummary] = useState<{ total_missing_files: number; orphan_media_count: number } | null>(null);
+  const [reloadTick, setReloadTick] = useState<number>(0);
   const [hoveredLiveMediaId, setHoveredLiveMediaId] = useState<string | null>(null);
 
   // Context Menu state
@@ -198,7 +205,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
     fetchMedia();
     return () => controller.abort();
-  }, [mediaType, selectedSource, debouncedSearch, selectedAlbum, selectedTag, selectedMonthKey, onlyFavorites, protectionStatus, geoFilter, sortBy, offset, limit]);
+  }, [mediaType, selectedSource, debouncedSearch, selectedAlbum, selectedTag, selectedMonthKey, onlyFavorites, protectionStatus, geoFilter, sortBy, offset, limit, reloadTick]);
 
   const handleFilterChange = () => {
     setOffset(0);
@@ -212,6 +219,66 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       toast.success(res.is_favorite ? 'Aggiunto ai preferiti' : 'Rimosso dai preferiti');
     } catch (err) {
       toast.error((err as Error).message);
+    }
+  };
+
+  const handleBatchTrash = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    if (!window.confirm(`Spostare ${ids.length} elementi nel cestino (.pmm_trash) sui dischi collegati? Potrai ripristinarli o svuotarli definitivamente nella sezione Duplicati -> Cestino.`)) {
+      return;
+    }
+    try {
+      const res = await ApiClient.batchTrashMedia(ids, selectedSource || undefined);
+      if (res.trashed_files_count > 0) {
+        toast.success(`Spostati ${res.trashed_files_count} file nel cestino .pmm_trash`);
+        setSelectedIds(new Set());
+        setOffset(0);
+        setReloadTick((t) => t + 1);
+      } else if (res.errors && res.errors.length > 0) {
+        toast.error(res.errors[0].error || 'Impossibile cestinare i file selezionati');
+      } else {
+        toast.error('Nessun file attivo online trovato per la selezione.');
+      }
+    } catch (err) {
+      toast.error((err as Error).message || 'Errore durante lo spostamento nel cestino');
+    }
+  };
+
+  const handleVerifySources = async () => {
+    try {
+      setVerifying(true);
+      const res = await ApiClient.verifySources(selectedSource || undefined);
+      setMissingSummary({ total_missing_files: res.total_missing_files, orphan_media_count: res.orphan_media_count });
+      if (res.newly_missing > 0 || res.restored_available > 0) {
+        toast.info(`Verifica completata: ${res.newly_missing} eliminati rilevati, ${res.restored_available} ripristinati.`);
+        setOffset(0);
+        setReloadTick((t) => t + 1);
+      } else {
+        toast.success(`Verifica completata (${res.checked_files} file controllati): nessuna modifica esterna rilevata.`);
+      }
+    } catch (err) {
+      toast.error((err as Error).message || 'Errore durante la verifica');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const handlePurgeMissing = async () => {
+    if (!window.confirm('Eliminare definitivamente dal catalogo i riferimenti ai file non più presenti su disco (e le relative miniature orfane)?')) {
+      return;
+    }
+    try {
+      setPurgingMissing(true);
+      const res = await ApiClient.purgeMissingRecords({ source_id: selectedSource || undefined });
+      toast.success(`Pulizia completata: rimossi ${res.purged_files_count} riferimenti e ${res.purged_orphan_media_count} media orfani.`);
+      setMissingSummary(null);
+      setOffset(0);
+      setReloadTick((t) => t + 1);
+    } catch (err) {
+      toast.error((err as Error).message || 'Errore durante la pulizia');
+    } finally {
+      setPurgingMissing(false);
     }
   };
 
@@ -1062,8 +1129,8 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             onChange={(e) => { setProtectionStatus(e.target.value); handleFilterChange(); }}
             style={{
               background: '#0f172a',
-              color: 'white',
-              border: '1px solid #334155',
+              color: protectionStatus === 'missing' ? '#f43f5e' : 'white',
+              border: protectionStatus === 'missing' ? '1px solid #f43f5e' : '1px solid #334155',
               borderRadius: '8px',
               padding: '7px 10px',
               fontSize: '12px'
@@ -1073,7 +1140,31 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             <option value="protected">Protetti (2+ Dischi)</option>
             <option value="unprotected">A Rischio (1 Solo Disco)</option>
             <option value="intra_source_duplicate">Duplicati Intra-Disco (Spreco)</option>
+            <option value="missing">Mancanti / Eliminati dal disco</option>
           </select>
+
+          {/* Quick Verify button */}
+          <button
+            onClick={handleVerifySources}
+            disabled={verifying}
+            title="Verifica rapidamente (<1s) se i file sui dischi collegati sono stati eliminati dal Finder"
+            style={{
+              background: '#0f172a',
+              border: '1px solid #334155',
+              color: verifying ? '#38bdf8' : '#cbd5e1',
+              borderRadius: '8px',
+              padding: '7px 12px',
+              fontSize: '12px',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: verifying ? 'wait' : 'pointer'
+            }}
+          >
+            <RefreshCw size={13} className={verifying ? 'spin' : ''} />
+            {verifying ? 'Verifica...' : 'Verifica Dischi'}
+          </button>
 
           {/* Sort order dropdown */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -1222,7 +1313,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             )}
 
             {/* Batch Add Tag */}
-            {tags.length > 0 && (
+              {tags.length > 0 && (
               <select
                 onChange={(e) => {
                   if (e.target.value) handleBatchAddToTag(e.target.value);
@@ -1245,6 +1336,25 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 ))}
               </select>
             )}
+
+            <button
+              onClick={handleBatchTrash}
+              style={{
+                background: 'rgba(244, 63, 94, 0.15)',
+                border: '1px solid rgba(244, 63, 94, 0.5)',
+                color: '#fda4af',
+                borderRadius: '6px',
+                padding: '6px 12px',
+                fontSize: '12px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer'
+              }}
+            >
+              <Trash2 size={14} /> Cestina (.pmm_trash)
+            </button>
 
             <button
               onClick={() => setSelectedIds(new Set())}
@@ -1315,6 +1425,69 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               </button>
             );
           })}
+        </div>
+      )}
+
+      {/* Missing / Orphan Files Banner */}
+      {(protectionStatus === 'missing' || (missingSummary && missingSummary.orphan_media_count > 0)) && (
+        <div style={{
+          background: 'rgba(244, 63, 94, 0.12)',
+          border: '1px solid rgba(244, 63, 94, 0.4)',
+          borderRadius: '10px',
+          padding: '12px 16px',
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#fda4af', fontSize: '13px' }}>
+            <AlertTriangle size={18} color="#f43f5e" />
+            <span>
+              {protectionStatus === 'missing'
+                ? 'Stai visualizzando i media non più presenti su nessun disco fisico.'
+                : `Rilevati ${missingSummary?.orphan_media_count} media orfani (${missingSummary?.total_missing_files} file mancanti su disco).`}
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {protectionStatus !== 'missing' && (
+              <button
+                onClick={() => { setProtectionStatus('missing'); handleFilterChange(); }}
+                style={{
+                  background: '#1e293b',
+                  border: '1px solid #475569',
+                  color: '#f8fafc',
+                  borderRadius: '6px',
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Mostra Orfani
+              </button>
+            )}
+            <button
+              onClick={handlePurgeMissing}
+              disabled={purgingMissing}
+              style={{
+                background: '#e11d48',
+                border: 'none',
+                color: 'white',
+                borderRadius: '6px',
+                padding: '6px 12px',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: purgingMissing ? 'wait' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <Trash2 size={14} />
+              {purgingMissing ? 'Pulizia...' : 'Pulisci file mancanti dal catalogo'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -1510,6 +1683,20 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             }}
           >
             <Folder size={14} color="#a855f7" /> + Crea Album con selezione...
+          </button>
+
+          {/* Sposta nel cestino */}
+          <button
+            onClick={() => {
+              setContextMenu(null);
+              handleBatchTrash();
+            }}
+            className="context-menu-item"
+            style={{
+              display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'transparent', border: 'none', color: '#fda4af', fontSize: '12px', borderRadius: '6px', cursor: 'pointer', textAlign: 'left', width: '100%'
+            }}
+          >
+            <Trash2 size={14} color="#f43f5e" /> Sposta nel Cestino (.pmm_trash)
           </button>
 
           {/* Deseleziona */}

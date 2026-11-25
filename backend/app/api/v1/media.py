@@ -87,6 +87,17 @@ def batch_favorite(
     updated_count = batch_set_favorite(db, current_user.id, media_ids, is_fav)
     return {"updated_count": updated_count, "is_favorite": is_fav}
 
+@router.post("/batch/trash")
+def batch_trash_media(
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    from app.services.trash_service import trash_media_items
+    media_ids = payload.get("media_ids", [])
+    source_id = payload.get("source_id")
+    return trash_media_items(db, current_user.id, media_ids, source_id=source_id)
+
 @router.get("/dashboard/stats")
 def get_stats(
     current_user: User = Depends(get_current_user),
