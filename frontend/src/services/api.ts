@@ -194,6 +194,25 @@ export class ApiClient {
     });
   }
 
+  public static async getSourceEvents(sinceId?: string) {
+    const q = sinceId ? `?since_id=${encodeURIComponent(sinceId)}` : '';
+    return this.request<{
+      monitor_active: boolean;
+      events: Array<{
+        id: string;
+        timestamp: string;
+        event_type: 'disk_connected' | 'disk_disconnected' | 'external_changes_detected';
+        source_id: string;
+        source_name: string;
+        checked_files: number;
+        newly_missing: number;
+        restored_available: number;
+        orphan_media_count: number;
+        message: string;
+      }>;
+    }>(`/sources/events${q}`);
+  }
+
   // Scans
   public static async getScans() {
     return this.request<any[]>('/scans');

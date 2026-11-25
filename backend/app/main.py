@@ -19,15 +19,31 @@ init_geo_places_cache(engine)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Safe startup recovery for uncompleted/crashed scans
+    is_test = bool(os.environ.get("PYTEST_CURRENT_TEST"))
     try:
-        if not os.environ.get("PYTEST_CURRENT_TEST"):
+        if not is_test:
             from app.core.database import SessionLocal
             from app.services.scan_service import recover_stale_scans
             with SessionLocal() as db_session:
                 recover_stale_scans(db_session)
     except Exception:
         pass
+
+    if not is_test:
+        try:
+            from app.services.proactive_monitor_service import start_proactive_monitor
+            start_proactive_monitor()
+        except Exception:
+            pass
+
     yield
+
+    if not is_test:
+        try:
+            from app.services.proactive_monitor_service import stop_proactive_monitor
+            stop_proactive_monitor()
+        except Exception:
+            pass
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

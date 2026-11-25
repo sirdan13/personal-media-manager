@@ -54,6 +54,17 @@ def browse_filesystem(
     """
     return browse_server_filesystem(path)
 
+@router.get("/events")
+def get_proactive_events(
+    since_id: Optional[str] = Query(None, description="Restituisce solo eventi successivi a questo ID"),
+    current_user: User = Depends(get_current_user)
+):
+    from app.services.proactive_monitor_service import get_user_proactive_events
+    return {
+        "monitor_active": True,
+        "events": get_user_proactive_events(current_user.id, since_id=since_id)
+    }
+
 @router.get("", response_model=List[SourceOut])
 def list_sources(
     current_user: User = Depends(get_current_user),

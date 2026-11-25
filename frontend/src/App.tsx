@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ApiClient } from './services/api';
+import { useToast } from './context/ToastContext';
 import { Sidebar } from './components/Sidebar';
 import { Topbar } from './components/Topbar';
 import { AuthModal } from './features/auth/AuthModal';
@@ -15,6 +16,8 @@ import { TutorialModal } from './components/TutorialModal';
 import { Grid, Heart, MapPin, LayoutDashboard } from 'lucide-react';
 
 export const App: React.FC = () => {
+  const { toast } = useToast();
+  const lastProactiveEventIdRef = useRef<string | undefined>(undefined);
   const [currentUser, setCurrentUser] = useState<any | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
@@ -44,6 +47,45 @@ export const App: React.FC = () => {
       setInitializing(false);
     }
   }, []);
+
+  // Poll proactive background monitor events (USB drive mount/unmount & local folder integrity)
+  useEffect(() => {
+    if (!currentUser) return;
+    let cancelled = false;
+
+    // Seed initial cursor without replaying historical events
+    ApiClient.getSourceEvents()
+      .then((res) => {
+        if (!cancelled && res.events.length > 0) {
+          lastProactiveEventIdRef.current = res.events[res.events.length - 1].id;
+        }
+      })
+      .catch(() => {});
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await ApiClient.getSourceEvents(lastProactiveEventIdRef.current);
+        if (cancelled || !res.events || res.events.length === 0) return;
+        lastProactiveEventIdRef.current = res.events[res.events.length - 1].id;
+        for (const ev of res.events) {
+          if (ev.event_type === 'disk_connected') {
+            toast.success(ev.message);
+          } else if (ev.event_type === 'external_changes_detected') {
+            toast.info(ev.message);
+          } else {
+            toast.info(ev.message);
+          }
+        }
+      } catch {
+        // Ignore transient network errors during polling
+      }
+    }, 15000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [currentUser]);
 
   const handleLogout = () => {
     ApiClient.setToken(null);
