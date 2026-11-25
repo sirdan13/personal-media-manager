@@ -1,7 +1,9 @@
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.core.database import engine, Base, run_db_migrations
 from app.api.v1.router import api_router
@@ -55,3 +57,27 @@ def healthcheck():
         "project": settings.PROJECT_NAME,
         "version": settings.VERSION
     }
+
+# Self-contained SPA serving: serve frontend/dist directly when built
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+_FRONTEND_DIST = os.path.join(_PROJECT_ROOT, "frontend", "dist")
+_FRONTEND_ASSETS = os.path.join(_FRONTEND_DIST, "assets")
+
+if os.path.isdir(_FRONTEND_DIST):
+    if os.path.isdir(_FRONTEND_ASSETS):
+        app.mount("/assets", StaticFiles(directory=_FRONTEND_ASSETS), name="frontend_assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def serve_spa(full_path: str):
+        if full_path.startswith(("api/", "docs", "openapi.json", "redoc", "health")):
+            raise HTTPException(status_code=404, detail="Not Found")
+
+        real_dist = os.path.realpath(_FRONTEND_DIST)
+        candidate = os.path.realpath(os.path.join(real_dist, full_path)) if full_path else None
+        if candidate and os.path.commonpath([real_dist, candidate]) == real_dist and os.path.isfile(candidate):
+            return FileResponse(candidate)
+
+        index_file = os.path.join(real_dist, "index.html")
+        if os.path.isfile(index_file):
+            return FileResponse(index_file)
+        raise HTTPException(status_code=404, detail="Frontend build non trovato")
