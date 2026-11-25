@@ -1,11 +1,14 @@
 import os
 import platform
 import fnmatch
+import shutil
+import hashlib
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any, Set
 from sqlalchemy.orm import Session
 from sqlalchemy import func, exists
 from fastapi import HTTPException, status
-from app.models.entities import Source, File, Thumbnail, Media, AlbumMedia, MediaTag
+from app.models.entities import Source, File, Thumbnail, Media, AlbumMedia, MediaTag, generate_uuid
 from app.core.config import settings
 from app.schemas.source import SourceCreate, SourceUpdate, SourceOut
 
@@ -343,6 +346,198 @@ def purge_missing_records(
     return {
         "purged_files_count": purged_files_count,
         "purged_orphan_media_count": purged_orphan_media_count
+    }
+
+def _sha256_file(filepath: str) -> str:
+    h = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        while True:
+            chunk = f.read(1024 * 1024)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
+
+def compare_sources(
+    db: Session,
+    user_id: str,
+    primary_source_id: str,
+    secondary_source_id: str
+) -> Dict[str, Any]:
+    """
+    Compares primary_source_id against secondary_source_id and returns media present
+    on primary that are missing on secondary, grouped by top-level folder.
+    """
+    from app.services.media_service import compute_backup_gap
+    gap = compute_backup_gap(db, user_id, primary_source_id, secondary_source_id, only_favorites=False)
+
+    by_folder_map: Dict[str, Dict[str, Any]] = {}
+    for item in gap["missing_items"]:
+        rel = (item.get("relative_path") or "").replace("\\", "/").strip("/")
+        parts = rel.split("/") if rel else []
+        top_folder = parts[0] if len(parts) > 1 else "(Radice)"
+        if top_folder not in by_folder_map:
+            by_folder_map[top_folder] = {"folder": top_folder, "count": 0, "bytes": 0}
+        by_folder_map[top_folder]["count"] += 1
+        by_folder_map[top_folder]["bytes"] += (item.get("size_bytes") or 0)
+
+    by_folder = sorted(by_folder_map.values(), key=lambda x: -x["bytes"])
+
+    return {
+        "primary_source_id": primary_source_id,
+        "secondary_source_id": secondary_source_id,
+        "total_primary_media": gap["total_primary_media"],
+        "backed_up_media": gap["backed_up_media"],
+        "missing_count": gap["missing_on_backup_count"],
+        "missing_bytes": gap["missing_on_backup_bytes"],
+        "coverage_pct": gap["coverage_pct"],
+        "by_folder": by_folder,
+        "missing_items": gap["missing_items"]
+    }
+
+def backup_copy_to_source(
+    db: Session,
+    user_id: str,
+    media_ids: List[str],
+    target_source_id: str,
+    target_subfolder: str = ""
+) -> Dict[str, Any]:
+    """
+    Copies physical files for selected media_ids from any online source onto target_source_id,
+    verifies SHA-256 and size, and registers new File records so protection status updates immediately.
+    """
+    target_source = get_source_by_id(db, user_id, target_source_id)
+    if not target_source.root_path or not os.path.isdir(target_source.root_path):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"La fonte di destinazione '{target_source.name}' è offline o non accessibile."
+        )
+
+    unique_ids = list(dict.fromkeys(media_ids or []))
+    if not unique_ids:
+        return {"copied_count": 0, "skipped_count": 0, "copied_bytes": 0, "copied_items": [], "errors": []}
+
+    # Find media_ids already present on target_source_id
+    existing_on_target = {
+        r[0] for r in db.query(File.media_id).filter(
+            File.source_id == target_source_id,
+            File.media_id.in_(unique_ids),
+            File.availability_status.notin_(("missing", "trashed"))
+        ).all()
+    }
+
+    clean_sub = (target_subfolder or "").replace("\\", "/").strip("/")
+    copied_items = []
+    errors = []
+    skipped_count = 0
+    now_utc = datetime.now(timezone.utc)
+
+    for m_id in unique_ids:
+        if m_id in existing_on_target:
+            skipped_count += 1
+            continue
+
+        media = db.query(Media).filter(Media.id == m_id, Media.user_id == user_id).first()
+        if not media:
+            errors.append({"media_id": m_id, "error": "Media non trovato."})
+            continue
+
+        # Find an online active source copy
+        candidates = (
+            db.query(File, Source)
+            .join(Source, File.source_id == Source.id)
+            .filter(
+                File.media_id == m_id,
+                File.availability_status.notin_(("missing", "trashed"))
+            ).all()
+        )
+
+        src_file_obj = None
+        src_full_path = None
+        for f, s in candidates:
+            if s.root_path and os.path.isdir(s.root_path):
+                resolved = resolve_safe_source_file(s.root_path, f.relative_path)
+                if resolved:
+                    src_file_obj = f
+                    src_full_path = resolved
+                    break
+
+        if not src_file_obj or not src_full_path:
+            errors.append({"media_id": m_id, "error": "Nessuna copia sorgente online trovata su disco."})
+            continue
+
+        clean_rel = src_file_obj.relative_path.replace("\\", "/").lstrip("/")
+        dest_rel = f"{clean_sub}/{clean_rel}" if clean_sub else clean_rel
+
+        # Resolve safe destination path inside target_source.root_path
+        real_root = os.path.realpath(target_source.root_path)
+        dest_full = os.path.realpath(os.path.join(real_root, dest_rel))
+        if os.path.commonpath([real_root, dest_full]) != real_root or dest_full == real_root:
+            errors.append({"media_id": m_id, "filename": src_file_obj.filename, "error": "Percorso di destinazione non valido."})
+            continue
+
+        # Handle collision if a different file already exists at dest_full
+        if os.path.exists(dest_full):
+            existing_sha = _sha256_file(dest_full)
+            if existing_sha != src_file_obj.sha256:
+                base, ext = os.path.splitext(dest_rel)
+                dest_rel = f"{base}_{m_id[:8]}{ext}"
+                dest_full = os.path.realpath(os.path.join(real_root, dest_rel))
+
+        try:
+            os.makedirs(os.path.dirname(dest_full), exist_ok=True)
+            if not os.path.exists(dest_full):
+                shutil.copy2(src_full_path, dest_full)
+
+            copied_sha = _sha256_file(dest_full)
+            copied_size = os.path.getsize(dest_full)
+
+            if copied_sha != src_file_obj.sha256:
+                try:
+                    os.remove(dest_full)
+                except Exception:
+                    pass
+                errors.append({"media_id": m_id, "filename": src_file_obj.filename, "error": "Verifica SHA-256 fallita dopo la copia."})
+                continue
+
+            new_file = File(
+                id=generate_uuid(),
+                media_id=media.id,
+                source_id=target_source.id,
+                filename=os.path.basename(dest_rel),
+                relative_path=dest_rel,
+                extension=src_file_obj.extension,
+                mime_type=src_file_obj.mime_type,
+                size_bytes=copied_size,
+                filesystem_modified_at=src_file_obj.filesystem_modified_at,
+                filesystem_created_at=src_file_obj.filesystem_created_at,
+                captured_at=src_file_obj.captured_at,
+                width=src_file_obj.width,
+                height=src_file_obj.height,
+                duration_seconds=src_file_obj.duration_seconds,
+                metadata_json=src_file_obj.metadata_json,
+                sha256=copied_sha,
+                availability_status="available",
+                first_indexed_at=now_utc,
+                last_seen_at=now_utc
+            )
+            db.add(new_file)
+            copied_items.append({
+                "media_id": media.id,
+                "filename": new_file.filename,
+                "relative_path": dest_rel,
+                "size_bytes": copied_size
+            })
+        except Exception as e:
+            errors.append({"media_id": m_id, "filename": src_file_obj.filename, "error": str(e)})
+
+    db.commit()
+    return {
+        "copied_count": len(copied_items),
+        "skipped_count": skipped_count,
+        "copied_bytes": sum(x["size_bytes"] for x in copied_items),
+        "copied_items": copied_items,
+        "errors": errors
     }
 
 def is_path_excluded(rel_path: str, excluded_patterns: List[str]) -> bool:

@@ -176,6 +176,67 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
   };
 
   const [verifyingSourceId, setVerifyingSourceId] = useState<string | null>(null);
+  const [comparePrimaryId, setComparePrimaryId] = useState<string>('');
+  const [compareSecondaryId, setCompareSecondaryId] = useState<string>('');
+  const [compareResult, setCompareResult] = useState<any | null>(null);
+  const [comparing, setComparing] = useState<boolean>(false);
+  const [copyingBackup, setCopyingBackup] = useState<boolean>(false);
+
+  const formatBytes = (bytes?: number) => {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const handleCompareSources = async () => {
+    if (!comparePrimaryId || !compareSecondaryId) {
+      toast.error('Seleziona entrambi i dischi da confrontare.');
+      return;
+    }
+    if (comparePrimaryId === compareSecondaryId) {
+      toast.error('Seleziona due dischi diversi.');
+      return;
+    }
+    try {
+      setComparing(true);
+      const res = await ApiClient.compareSources(comparePrimaryId, compareSecondaryId);
+      setCompareResult(res);
+    } catch (err: any) {
+      toast.error(err?.message || 'Errore durante il confronto dei dischi');
+    } finally {
+      setComparing(false);
+    }
+  };
+
+  const handleCopyMissingToSecondary = async () => {
+    if (!compareResult || !compareResult.missing_items?.length) return;
+    const targetSrc = sources.find((s) => s.id === compareSecondaryId);
+    const confirmed = window.confirm(
+      `Copiare ${compareResult.missing_count} file (${formatBytes(compareResult.missing_bytes)}) sul disco "${targetSrc?.name || 'Destinazione'}"?\n\n` +
+      `Ogni file verrà copiato preservando la struttura originale e verificato tramite SHA-256.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setCopyingBackup(true);
+      const mediaIds = compareResult.missing_items.map((x: any) => x.media_id);
+      const res = await ApiClient.backupCopyToSource(mediaIds, compareSecondaryId);
+      if (res.errors && res.errors.length > 0) {
+        toast.info(`Copiati ${res.copied_count} file (${formatBytes(res.copied_bytes)}). ${res.errors.length} errori riscontrati.`);
+      } else {
+        toast.success(`Backup completato! Copiati e verificati ${res.copied_count} file (${formatBytes(res.copied_bytes)}).`);
+      }
+      await loadSources();
+      const updated = await ApiClient.compareSources(comparePrimaryId, compareSecondaryId);
+      setCompareResult(updated);
+    } catch (err: any) {
+      toast.error(err?.message || 'Errore durante la copia di backup');
+    } finally {
+      setCopyingBackup(false);
+    }
+  };
 
   const handleVerifySource = async (s: any) => {
     try {
@@ -867,6 +928,147 @@ export const SourcesView: React.FC<SourcesViewProps> = ({ onStartScanForSource }
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Confronta & Sincronizza Dischi Panel */}
+      {sources.length >= 2 && (
+        <div style={{
+          background: '#1e293b',
+          border: '1px solid #334155',
+          borderRadius: '14px',
+          padding: '22px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '16px'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: '#f8fafc' }}>
+                Confronta & Sincronizza Dischi
+              </h3>
+              <p style={{ fontSize: '12px', color: '#94a3b8', margin: '4px 0 0' }}>
+                Scopri quali foto e video presenti su un disco mancano su un secondo disco di backup e copiali con verifica SHA-256.
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'flex-end' }}>
+            <div style={{ flex: '1 1 220px' }}>
+              <label style={{ display: 'block', fontSize: '11px', color: '#94a3b8', marginBottom: '4px', fontWeight: 600 }}>
+                Disco Origine (A)
+              </label>
+              <select
+                value={comparePrimaryId}
+                onChange={(e) => { setComparePrimaryId(e.target.value); setCompareResult(null); }}
+                style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', padding: '9px 12px', color: 'white', fontSize: '13px' }}
+              >
+                <option value="">Seleziona disco origine...</option>
+                {sources.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name} ({s.status === 'online' ? 'Online' : 'Offline'})</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ flex: '1 1 220px' }}>
+              <label style={{ display: 'block', fontSize: '11px', color: '#94a3b8', marginBottom: '4px', fontWeight: 600 }}>
+                Disco Destinazione Backup (B)
+              </label>
+              <select
+                value={compareSecondaryId}
+                onChange={(e) => { setCompareSecondaryId(e.target.value); setCompareResult(null); }}
+                style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', padding: '9px 12px', color: 'white', fontSize: '13px' }}
+              >
+                <option value="">Seleziona disco backup...</option>
+                {sources.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name} ({s.status === 'online' ? 'Online' : 'Offline'})</option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              onClick={handleCompareSources}
+              disabled={comparing || !comparePrimaryId || !compareSecondaryId}
+              style={{
+                background: '#0284c7',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '10px 18px',
+                color: 'white',
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: comparing ? 'wait' : 'pointer'
+              }}
+            >
+              {comparing ? 'Confronto...' : 'Confronta Dischi'}
+            </button>
+          </div>
+
+          {compareResult && (
+            <div style={{
+              background: '#0f172a',
+              border: '1px solid #334155',
+              borderRadius: '10px',
+              padding: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                <div style={{ fontSize: '13px', color: '#e2e8f0' }}>
+                  Copertura backup: <strong style={{ color: compareResult.coverage_pct === 100 ? '#22c55e' : '#38bdf8' }}>{compareResult.coverage_pct}%</strong>
+                  {' · '}
+                  Mancanti su B: <strong style={{ color: compareResult.missing_count > 0 ? '#f59e0b' : '#22c55e' }}>{compareResult.missing_count}</strong> file ({formatBytes(compareResult.missing_bytes)})
+                </div>
+
+                {compareResult.missing_count > 0 && (() => {
+                  const srcA = sources.find((s) => s.id === comparePrimaryId);
+                  const srcB = sources.find((s) => s.id === compareSecondaryId);
+                  const bothOnline = srcA?.status === 'online' && srcB?.status === 'online';
+                  return (
+                    <button
+                      onClick={handleCopyMissingToSecondary}
+                      disabled={!bothOnline || copyingBackup}
+                      title={!bothOnline ? 'Entrambi i dischi devono essere collegati (Online) per eseguire la copia' : 'Copia i file mancanti verificando SHA-256'}
+                      style={{
+                        background: bothOnline ? '#16a34a' : '#334155',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '8px 16px',
+                        color: 'white',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        cursor: !bothOnline ? 'not-allowed' : (copyingBackup ? 'wait' : 'pointer'),
+                        opacity: bothOnline ? 1 : 0.65
+                      }}
+                    >
+                      {copyingBackup ? 'Copia e verifica SHA-256 in corso...' : `Copia ${compareResult.missing_count} file mancanti su ${srcB?.name || 'Disco B'}`}
+                    </button>
+                  );
+                })()}
+              </div>
+
+              {compareResult.by_folder && compareResult.by_folder.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  {compareResult.by_folder.slice(0, 10).map((f: any) => (
+                    <span
+                      key={f.folder}
+                      style={{
+                        fontSize: '11px',
+                        background: '#1e293b',
+                        border: '1px solid #334155',
+                        borderRadius: '6px',
+                        padding: '4px 10px',
+                        color: '#cbd5e1'
+                      }}
+                    >
+                      📁 {f.folder}: <strong>{f.count}</strong> ({formatBytes(f.bytes)})
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

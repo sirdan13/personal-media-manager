@@ -21,7 +21,8 @@ import {
   Eye,
   RefreshCw,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  HardDrive
 } from 'lucide-react';
 import { MediaDetailModal } from './MediaDetailModal';
 
@@ -219,6 +220,30 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       toast.success(res.is_favorite ? 'Aggiunto ai preferiti' : 'Rimosso dai preferiti');
     } catch (err) {
       toast.error((err as Error).message);
+    }
+  };
+
+  const handleBatchBackupCopy = async (targetSourceId: string) => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0 || !targetSourceId) return;
+    const targetSrc = sources.find((s) => s.id === targetSourceId);
+    if (!window.confirm(`Copiare ${ids.length} elementi selezionati sul disco "${targetSrc?.name || 'Destinazione'}" con verifica SHA-256?`)) {
+      return;
+    }
+    try {
+      const res = await ApiClient.backupCopyToSource(ids, targetSourceId);
+      if (res.copied_count > 0) {
+        toast.success(`Copiati e verificati ${res.copied_count} file su "${targetSrc?.name}"! (${res.skipped_count} già presenti)`);
+        setSelectedIds(new Set());
+        setOffset(0);
+        setReloadTick((t) => t + 1);
+      } else if (res.skipped_count > 0 && (!res.errors || res.errors.length === 0)) {
+        toast.info(`Tutti i ${res.skipped_count} file selezionati sono già presenti su "${targetSrc?.name}".`);
+      } else if (res.errors && res.errors.length > 0) {
+        toast.error(res.errors[0].error || 'Errore durante la copia su disco');
+      }
+    } catch (err) {
+      toast.error((err as Error).message || 'Errore durante la copia su disco');
     }
   };
 
@@ -1337,6 +1362,31 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               </select>
             )}
 
+            {sources.some((s) => s.status === 'online') && (
+              <select
+                onChange={(e) => {
+                  if (e.target.value) handleBatchBackupCopy(e.target.value);
+                  e.target.value = '';
+                }}
+                defaultValue=""
+                style={{
+                  background: '#1e293b',
+                  color: '#4ade80',
+                  border: '1px solid rgba(34, 197, 94, 0.4)',
+                  borderRadius: '6px',
+                  padding: '6px 10px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="" disabled>Copia su disco...</option>
+                {sources.filter((s) => s.status === 'online').map((s) => (
+                  <option key={s.id} value={s.id}>→ {s.name}</option>
+                ))}
+              </select>
+            )}
+
             <button
               onClick={handleBatchTrash}
               style={{
@@ -1684,6 +1734,23 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           >
             <Folder size={14} color="#a855f7" /> + Crea Album con selezione...
           </button>
+
+          {/* Copia su altro disco */}
+          {sources.filter((s) => s.status === 'online').map((s) => (
+            <button
+              key={`ctx-copy-${s.id}`}
+              onClick={() => {
+                setContextMenu(null);
+                handleBatchBackupCopy(s.id);
+              }}
+              className="context-menu-item"
+              style={{
+                display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'transparent', border: 'none', color: '#4ade80', fontSize: '12px', borderRadius: '6px', cursor: 'pointer', textAlign: 'left', width: '100%'
+              }}
+            >
+              <HardDrive size={14} color="#22c55e" /> Copia su {s.name}
+            </button>
+          ))}
 
           {/* Sposta nel cestino */}
           <button

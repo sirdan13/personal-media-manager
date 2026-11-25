@@ -153,6 +153,47 @@ export class ApiClient {
     });
   }
 
+  public static async compareSources(primaryId: string, secondaryId: string) {
+    return this.request<{
+      primary_source_id: string;
+      secondary_source_id: string;
+      total_primary_media: number;
+      backed_up_media: number;
+      missing_count: number;
+      missing_bytes: number;
+      coverage_pct: number;
+      by_folder: Array<{ folder: string; count: number; bytes: number }>;
+      missing_items: Array<{
+        media_id: string;
+        canonical_sha256: string;
+        filename: string;
+        relative_path: string;
+        size_bytes: number;
+        captured_at?: string;
+        is_favorite: boolean;
+        has_thumbnail: boolean;
+        media_type: string;
+      }>;
+    }>(`/sources/compare?primary_id=${encodeURIComponent(primaryId)}&secondary_id=${encodeURIComponent(secondaryId)}`);
+  }
+
+  public static async backupCopyToSource(mediaIds: string[], targetSourceId: string, targetSubfolder = '') {
+    return this.request<{
+      copied_count: number;
+      skipped_count: number;
+      copied_bytes: number;
+      copied_items: any[];
+      errors: any[];
+    }>('/sources/backup-copy', {
+      method: 'POST',
+      body: JSON.stringify({
+        media_ids: mediaIds,
+        target_source_id: targetSourceId,
+        target_subfolder: targetSubfolder
+      })
+    });
+  }
+
   // Scans
   public static async getScans() {
     return this.request<any[]>('/scans');

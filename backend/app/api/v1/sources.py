@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
-from fastapi import APIRouter, Depends, status, Body
+from fastapi import APIRouter, Depends, status, Body, Query
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.schemas.source import SourceCreate, SourceUpdate, SourceOut
@@ -16,7 +16,9 @@ from app.services.source_service import (
     get_source_folders,
     exclude_and_purge_paths,
     quick_verify_sources,
-    purge_missing_records
+    purge_missing_records,
+    compare_sources,
+    backup_copy_to_source
 )
 from app.api.deps import get_current_user
 from app.models.entities import User
@@ -34,6 +36,11 @@ class VerifySourcesRequest(BaseModel):
 class PurgeMissingRequest(BaseModel):
     source_id: Optional[str] = None
     media_ids: Optional[List[str]] = None
+
+class BackupCopyRequest(BaseModel):
+    media_ids: List[str]
+    target_source_id: str
+    target_subfolder: str = ""
 
 router = APIRouter(prefix="/sources", tags=["Fonti & Archivi"])
 
@@ -84,6 +91,29 @@ def purge_missing_endpoint(
         current_user.id,
         source_id=payload.source_id if payload else None,
         media_ids=payload.media_ids if payload else None
+    )
+
+@router.get("/compare")
+def compare_sources_endpoint(
+    primary_id: str = Query(..., description="ID disco origine (A)"),
+    secondary_id: str = Query(..., description="ID disco backup (B)"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return compare_sources(db, current_user.id, primary_id, secondary_id)
+
+@router.post("/backup-copy")
+def backup_copy_endpoint(
+    payload: BackupCopyRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return backup_copy_to_source(
+        db,
+        current_user.id,
+        media_ids=payload.media_ids,
+        target_source_id=payload.target_source_id,
+        target_subfolder=payload.target_subfolder
     )
 
 @router.get("/{source_id}", response_model=SourceOut)
