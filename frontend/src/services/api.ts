@@ -270,6 +270,7 @@ export class ApiClient {
   public static async getMediaWithTotal(params: {
     mediaType?: string;
     sourceId?: string;
+    folder?: string;
     search?: string;
     albumId?: string;
     tagId?: string;
@@ -287,6 +288,7 @@ export class ApiClient {
     const q = new URLSearchParams();
     if (params.mediaType) q.set('media_type', params.mediaType);
     if (params.sourceId) q.set('source_id', params.sourceId);
+    if (params.folder) q.set('folder', params.folder);
     if (params.search) q.set('search', params.search);
     if (params.albumId) q.set('album_id', params.albumId);
     if (params.tagId) q.set('tag_id', params.tagId);

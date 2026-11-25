@@ -31,6 +31,7 @@ def list_user_media(
     user_id: str,
     media_type: Optional[str] = None,
     source_id: Optional[str] = None,
+    folder: Optional[str] = None,
     search: Optional[str] = None,
     album_id: Optional[str] = None,
     tag_id: Optional[str] = None,
@@ -88,6 +89,13 @@ def list_user_media(
 
     if source_id:
         query = query.filter(File.source_id == source_id)
+
+    if folder:
+        if folder == "(Radice)":
+            query = query.filter(~File.relative_path.contains("/"))
+        else:
+            clean_folder = folder.replace("\\", "/").strip("/")
+            query = query.filter(File.relative_path.ilike(f"{clean_folder}/%"))
         
     if search:
         s = f"%{search.strip()}%"

@@ -22,7 +22,8 @@ import {
   RefreshCw,
   Trash2,
   AlertTriangle,
-  HardDrive
+  HardDrive,
+  List as ListIcon
 } from 'lucide-react';
 import { MediaDetailModal } from './MediaDetailModal';
 
@@ -54,7 +55,14 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   onClearTagFilter
 }) => {
   const { toast } = useToast();
-  const [viewMode, setViewMode] = useState<'grid' | 'timeline'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'timeline' | 'list'>(() => {
+    const saved = localStorage.getItem('pmm_view_mode');
+    return saved === 'timeline' || saved === 'list' ? saved : 'grid';
+  });
+  useEffect(() => {
+    localStorage.setItem('pmm_view_mode', viewMode);
+  }, [viewMode]);
+
   const [mediaList, setMediaList] = useState<any[]>([]);
   const [sources, setSources] = useState<any[]>([]);
   const [albums, setAlbums] = useState<any[]>([]);
@@ -62,6 +70,8 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   const [timelineBuckets, setTimelineBuckets] = useState<any[]>([]);
 
   const [selectedSource, setSelectedSource] = useState<string>('');
+  const [selectedFolder, setSelectedFolder] = useState<string>('');
+  const [sourceFolders, setSourceFolders] = useState<Array<{ folder: string; file_count: number }>>([]);
   const [selectedAlbum, setSelectedAlbum] = useState<string>('');
   const [selectedTag, setSelectedTag] = useState<string>('');
   const [selectedMonthKey, setSelectedMonthKey] = useState<string>('');
@@ -74,7 +84,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   const [geoFilter, setGeoFilter] = useState<{ latMin: number; latMax: number; lonMin: number; lonMax: number; label?: string } | null>(initialGeoFilter);
   const [sortBy, setSortBy] = useState<string>('date_desc');
   const [offset, setOffset] = useState<number>(0);
-  const [limit] = useState<number>(60);
+  const effectiveLimit = viewMode === 'list' ? 200 : 60;
   const [hasMore, setHasMore] = useState<boolean>(true);
   const [loading, setLoading] = useState<boolean>(false);
   const [selectedMediaId, setSelectedMediaId] = useState<string | null>(null);
@@ -191,6 +201,16 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     return () => clearTimeout(timer);
   }, [search]);
 
+  // Load folders when a specific source is selected
+  useEffect(() => {
+    setSelectedFolder('');
+    if (!selectedSource || !ApiClient.getToken()) {
+      setSourceFolders([]);
+      return;
+    }
+    ApiClient.getSourceFolders(selectedSource).then(setSourceFolders).catch(() => setSourceFolders([]));
+  }, [selectedSource]);
+
   // Fetch media on filter changes with AbortController
   useEffect(() => {
     if (!ApiClient.getToken()) return;
@@ -202,6 +222,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         const { items, totalCount: count } = await ApiClient.getMediaWithTotal({
           mediaType: mediaType || undefined,
           sourceId: selectedSource || undefined,
+          folder: selectedFolder || undefined,
           search: debouncedSearch.trim() || undefined,
           albumId: selectedAlbum || undefined,
           tagId: selectedTag || undefined,
@@ -214,7 +235,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           lonMax: geoFilter?.lonMax,
           sortBy,
           offset,
-          limit
+          limit: effectiveLimit
         }, controller.signal);
 
         setTotalCount(count);
@@ -224,7 +245,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         } else {
           setMediaList((prev) => [...prev, ...items]);
         }
-        setHasMore(items.length === limit);
+        setHasMore(items.length === effectiveLimit);
       } catch (err) {
         if ((err as Error).name !== 'AbortError') {
           console.error('Error fetching media:', err);
@@ -236,7 +257,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
     fetchMedia();
     return () => controller.abort();
-  }, [mediaType, selectedSource, debouncedSearch, selectedAlbum, selectedTag, selectedMonthKey, onlyFavorites, protectionStatus, geoFilter, sortBy, offset, limit, reloadTick]);
+  }, [mediaType, selectedSource, selectedFolder, debouncedSearch, selectedAlbum, selectedTag, selectedMonthKey, onlyFavorites, protectionStatus, geoFilter, sortBy, offset, effectiveLimit, reloadTick]);
 
   const handleFilterChange = () => {
     setOffset(0);
@@ -1008,10 +1029,10 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             Preferiti
           </button>
 
-          {/* View Mode Toggle (Griglia vs Timeline) */}
+          {/* View Mode Toggle (Griglia vs Timeline vs Elenco) */}
           <div style={{ display: 'flex', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', padding: '2px' }}>
             <button
-              onClick={() => setViewMode('grid')}
+              onClick={() => { if (viewMode === 'list') setOffset(0); setViewMode('grid'); }}
               style={{
                 padding: '6px 12px',
                 borderRadius: '6px',
@@ -1029,7 +1050,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               <GridIcon size={13} /> Griglia
             </button>
             <button
-              onClick={() => setViewMode('timeline')}
+              onClick={() => { if (viewMode === 'list') setOffset(0); setViewMode('timeline'); }}
               style={{
                 padding: '6px 12px',
                 borderRadius: '6px',
@@ -1045,6 +1066,25 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               }}
             >
               <Calendar size={13} /> Timeline
+            </button>
+            <button
+              onClick={() => { if (viewMode !== 'list') setOffset(0); setViewMode('list'); }}
+              title="Vista elenco ad alta densità (200 file per pagina, senza caricare miniature)"
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: 'none',
+                background: viewMode === 'list' ? '#0284c7' : 'transparent',
+                color: viewMode === 'list' ? 'white' : '#94a3b8',
+                fontSize: '12px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                cursor: 'pointer'
+              }}
+            >
+              <ListIcon size={13} /> Elenco
             </button>
           </div>
 
@@ -1180,6 +1220,30 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             ))}
           </select>
 
+          {/* Folder dropdown (when a Source is selected) */}
+          {selectedSource && sourceFolders.length > 0 && (
+            <select
+              value={selectedFolder}
+              onChange={(e) => { setSelectedFolder(e.target.value); handleFilterChange(); }}
+              style={{
+                background: '#0f172a',
+                color: selectedFolder ? '#38bdf8' : 'white',
+                border: selectedFolder ? '1px solid #38bdf8' : '1px solid #334155',
+                borderRadius: '8px',
+                padding: '7px 10px',
+                fontSize: '12px',
+                maxWidth: '220px'
+              }}
+            >
+              <option value="">Tutte le Cartelle</option>
+              {sourceFolders.map((f) => (
+                <option key={f.folder} value={f.folder}>
+                  📁 {f.folder} ({f.file_count})
+                </option>
+              ))}
+            </select>
+          )}
+
           {/* Protection / Backup status filter dropdown */}
           <select
             value={protectionStatus}
@@ -1247,7 +1311,8 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             </select>
           </div>
 
-          {/* Grid Zoom Slider */}
+          {/* Grid Zoom Slider (only in grid/timeline modes) */}
+          {viewMode !== 'list' && (
           <div
             title={`Dimensione miniature: ${gridSize}px`}
             style={{
@@ -1286,6 +1351,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               +
             </button>
           </div>
+          )}
         </div>
       </div>
 
@@ -1674,6 +1740,170 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               </div>
             ))}
           </div>
+        ) : viewMode === 'list' ? (
+          /* High-Density File List View (Zero Thumbnail Preloading) */
+          <div style={{
+            background: '#1e293b',
+            border: '1px solid #334155',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            overflowX: 'auto'
+          }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+              <thead>
+                <tr style={{ background: '#0f172a', borderBottom: '1px solid #334155', color: '#94a3b8', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  <th style={{ padding: '10px 12px', width: '36px' }}>
+                    <button
+                      type="button"
+                      onClick={handleSelectAll}
+                      title={selectedIds.size === mediaList.length ? 'Deseleziona tutti' : 'Seleziona tutti'}
+                      style={{ background: 'transparent', border: 'none', color: selectedIds.size === mediaList.length && mediaList.length > 0 ? '#38bdf8' : '#64748b', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 0 }}
+                    >
+                      {selectedIds.size === mediaList.length && mediaList.length > 0 ? <CheckSquare size={15} /> : <Square size={15} />}
+                    </button>
+                  </th>
+                  <th style={{ padding: '10px 12px' }}>File</th>
+                  <th style={{ padding: '10px 10px' }}>Formato</th>
+                  <th style={{ padding: '10px 10px' }}>Data</th>
+                  <th style={{ padding: '10px 10px' }}>Dimensione</th>
+                  <th style={{ padding: '10px 10px' }}>Risoluzione</th>
+                  <th style={{ padding: '10px 10px' }}>Stato Backup</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'right' }}>Azioni</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mediaList.map((media) => {
+                  const isSelected = selectedIds.has(media.id);
+                  const ext = (media.primary_extension || '').toUpperCase() || (media.media_type === 'video' ? 'VID' : 'IMG');
+                  const prot = media.protection_status;
+                  const protLabel =
+                    prot === 'protected'
+                      ? `Protetto (${media.distinct_sources_count} dischi)`
+                      : prot === 'intra_source_duplicate'
+                        ? 'Duplicato stesso disco'
+                        : prot === 'missing'
+                          ? 'Mancante su disco'
+                          : '1 Solo Disco';
+                  const protColor =
+                    prot === 'protected'
+                      ? '#4ade80'
+                      : prot === 'intra_source_duplicate'
+                        ? '#fbbf24'
+                        : '#f87171';
+                  const protBg =
+                    prot === 'protected'
+                      ? 'rgba(34, 197, 94, 0.12)'
+                      : prot === 'intra_source_duplicate'
+                        ? 'rgba(245, 158, 11, 0.12)'
+                        : 'rgba(244, 63, 94, 0.12)';
+
+                  return (
+                    <tr
+                      key={media.id}
+                      data-media-id={media.id}
+                      onClick={(e) => {
+                        if (hasDraggedRef.current || marqueeRef.current?.isSelecting) return;
+                        if (e.shiftKey || e.metaKey || e.ctrlKey || isSelectionMode) {
+                          handleToggleSelect(e, media.id);
+                        } else {
+                          setSelectedMediaId(media.id);
+                        }
+                      }}
+                      onContextMenu={(e) => handleCardContextMenu(e, media)}
+                      style={{
+                        borderBottom: '1px solid #1e293b',
+                        background: isSelected ? 'rgba(2, 132, 199, 0.18)' : 'transparent',
+                        cursor: 'pointer',
+                        userSelect: 'none'
+                      }}
+                    >
+                      <td style={{ padding: '8px 12px' }} onClick={(e) => handleToggleSelect(e, media.id)}>
+                        <span style={{ color: isSelected ? '#38bdf8' : '#64748b', display: 'flex', alignItems: 'center' }}>
+                          {isSelected ? <CheckSquare size={15} /> : <Square size={15} />}
+                        </span>
+                      </td>
+                      <td style={{ padding: '8px 12px', maxWidth: '340px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {media.media_type === 'video' ? (
+                            <Video size={15} color="#a855f7" style={{ flexShrink: 0 }} />
+                          ) : (
+                            <Image size={15} color="#38bdf8" style={{ flexShrink: 0 }} />
+                          )}
+                          <span style={{ fontWeight: 600, color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {media.primary_filename || 'File senza nome'}
+                          </span>
+                          {media.place_name && (
+                            <span style={{ fontSize: '11px', color: '#38bdf8', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                              <MapPin size={10} /> {media.place_name}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td style={{ padding: '8px 10px', color: '#94a3b8', fontSize: '11px', fontWeight: 600 }}>
+                        {ext}
+                      </td>
+                      <td style={{ padding: '8px 10px', color: '#cbd5e1', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                        {media.captured_at ? new Date(media.captured_at).toLocaleDateString() : 'N/D'}
+                      </td>
+                      <td style={{ padding: '8px 10px', color: '#cbd5e1', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                        {formatBytes(media.primary_size_bytes)}
+                      </td>
+                      <td style={{ padding: '8px 10px', color: '#94a3b8', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                        {media.width && media.height ? `${media.width} × ${media.height}` : '—'}
+                      </td>
+                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                        <span style={{
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          color: protColor,
+                          background: protBg,
+                          padding: '2px 8px',
+                          borderRadius: '6px'
+                        }}>
+                          {protLabel}
+                        </span>
+                      </td>
+                      <td style={{ padding: '8px 12px', textAlign: 'right', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                          <button
+                            type="button"
+                            onClick={(e) => handleToggleFavorite(e, media.id)}
+                            title={media.is_favorite ? 'Rimuovi dai Preferiti' : 'Aggiungi ai Preferiti'}
+                            style={{ background: 'transparent', border: 'none', color: media.is_favorite ? '#f43f5e' : '#64748b', cursor: 'pointer', padding: '4px', display: 'inline-flex' }}
+                          >
+                            <Heart size={14} fill={media.is_favorite ? '#f43f5e' : 'none'} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                await ApiClient.revealMedia(media.id);
+                                toast.success('Aperto nel Finder');
+                              } catch (err) {
+                                toast.error((err as Error).message);
+                              }
+                            }}
+                            title="Mostra nel Finder"
+                            style={{ background: 'transparent', border: 'none', color: '#38bdf8', cursor: 'pointer', padding: '4px', display: 'inline-flex' }}
+                          >
+                            <FolderOpen size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedMediaId(media.id)}
+                            title="Apri dettaglio / anteprima"
+                            style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px', display: 'inline-flex' }}
+                          >
+                            <Eye size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         ) : (
           /* Standard Grid View Mode */
           <div className="media-grid-container" style={{
@@ -1860,7 +2090,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       {hasMore && (
         <div style={{ display: 'flex', justifyContent: 'center', marginTop: '16px' }}>
           <button
-            onClick={() => setOffset((prev) => prev + limit)}
+            onClick={() => setOffset((prev) => prev + effectiveLimit)}
             disabled={loading}
             style={{
               background: '#1e293b',
