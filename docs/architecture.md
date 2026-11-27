@@ -5,11 +5,11 @@
 **Personal Media Manager** è una piattaforma per la catalogazione centralizzata, l'esplorazione e l'individuazione dei duplicati di fotografie e video distribuiti su molteplici dispositivi, dischi fisici esterni, schede SD e cartelle di backup.
 
 ### Principi Fondamentali:
-1. **Centralizzare i metadati, non i file originali**: I contenuti originali rimangono intatti e al loro posto fisico sui rispettivi supporti.
-2. **Natura strettamente read-only dell'MVP**: Nessuna modifica, spostamento, compressione o eliminazione automatica dei file originali.
+1. **Centralizzare i metadati, non i file originali**: I contenuti originali rimangono intatti e al loro posto fisico sui rispettivi supporti (salvo azioni esplicite e reversibili dell'utente come il Cestino sicuro o la Copia Backup verificata con SHA-256).
+2. **Sicurezza sui File Originali**: Nessuna modifica o eliminazione automatica non richiesta. Le operazioni sul disco avvengono solo su comando esplicito dell'utente (es. spostamento nel cestino locale con ripristino possibile, o copia backup verso una fonte secondaria con verifica hash).
 3. **Distinzione netta tra Contenuto Logico (`Media`) e Copia Fisica (`File`)**: Più file con percorsi, nomi e dischi diversi ma identico contenuto binario (SHA-256) fanno capo a un unico elemento multimediale logico.
-4. **Scansione Zero-Install via Browser**: Capacità di analizzare e indicizzare cartelle locali direttamente dall'interfaccia web mediante le moderne API del browser (File System Access API), con architettura predisposta per accogliere in futuro un agente locale headless.
-5. **Robustezza per Grandi Archivi**: Elaborazione a streaming/chunk progressivi, consumo di memoria controllato (evitando buffer massivi in RAM), tolleranza agli errori sui singoli file e ripresa idempotente delle scansioni.
+4. **Scansione Ibrida (Browser + Server + Agente Headless)**: Supporto per scansione zero-install via browser (File System Access API / `webkitdirectory`), scansione diretta lato server per cartelle locali/mount macOS, e agente headless Python per NAS/cron.
+5. **Robustezza per Grandi Archivi**: Elaborazione a streaming/chunk progressivi, consumo di memoria controllato (evitando buffer massivi in RAM), tolleranza agli errori sui singoli file, ripresa idempotente delle scansioni e monitoraggio proattivo in background (USB mount & folder changes).
 
 ---
 
@@ -83,9 +83,18 @@
 - Le miniature vengono salvate su filesystem locale in `/data/thumbnails/{hash[0:2]}/{hash[2:4]}/{hash}.webp` per evitare il sovraccarico di directory con troppi file.
 - Il database tiene traccia del puntatore relativo e delle dimensioni della miniatura.
 
-### 3.4 Agente Locale (Milestone Futura)
-- Progettato per condividere lo stesso contratto di API (`POST /api/v1/scans/{id}/batches`) dello scanner browser.
-- Potrà essere eseguito come demone Python/Go/Rust su NAS o server headless con accesso diretto ai mount point locali e supporto completo a ExifTool.
+### 3.4 Agente Locale Headless (`agent/scanner_agent.py`)
+- Condivide lo stesso contratto di API (`POST /api/v1/scans/{id}/batch`) dello scanner browser.
+- Eseguibile da terminale o cron job su NAS, Raspberry Pi o server locali con accesso diretto ai mount point e generazione miniature WebP tramite Pillow.
+
+### 3.5 Servizi Aggiuntivi Post-MVP (Fasi 5–14)
+- **SPA Self-Contained (`backend/app/main.py`)**: Quando `frontend/dist` è compilato, FastAPI serve direttamente l'intera applicazione React su porta `8089` (via `start_app.command`), oltre alla modalità dev con Vite su `5173`.
+- **Monitoraggio Proattivo (`proactive_monitor_service.py`)**: Thread in background avviato nel `lifespan` di FastAPI che rileva il mount di volumi esterni/USB e modifiche nelle cartelle locali, notificando il frontend via SSE (`/api/v1/sources/events`).
+- **Cestino Sicuro & Ciclo di Vita File (`trash_service.py`)**: Spostamento reversibile in cestino dedicato per duplicati esatti/simili (dHash), ripristino, svuotamento definitivo e pulizia orfani.
+- **Confronto Drive & Backup Attivo (`source_service.py`)**: Diff tra fonti `primary` e `backup` e copia file mancanti con verifica SHA-256 post-copia.
+- **Anteprime HD & RAW (`media_preview_service.py`)**: Estrazione anteprime ad alta risoluzione per file RAW e streaming video/immagini originali quando la fonte è online.
+- **AI Advisor & Smart Curation (`ai_provider.py`, `folder_advisor_service.py`, `smart_album_service.py`, `best_shot_service.py`, `curation_heuristics.py`)**: Suggerimenti su album, cartelle e best-shot tramite provider configurabile (`none`, `gemini`, `ollama`) con cache persistente e tetto giornaliero.
+- **Geolocalizzazione Offline (`geo_service.py`)**: Reverse geocoding offline tramite `reverse_geocoder` con cache locale per popolare `place_name` e alimentare la vista Mappa GPS.
 
 ---
 

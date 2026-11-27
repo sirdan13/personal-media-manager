@@ -296,6 +296,14 @@ export class ApiClient {
     monthKey?: string;
     isFavorite?: boolean;
     protectionStatus?: string;
+    cameraMake?: string;
+    cameraModel?: string;
+    lensModel?: string;
+    extension?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    hasGps?: boolean;
+    isLivePhoto?: boolean;
     latMin?: number;
     latMax?: number;
     lonMin?: number;
@@ -314,6 +322,14 @@ export class ApiClient {
     if (params.monthKey) q.set('month_key', params.monthKey);
     if (params.isFavorite !== undefined) q.set('is_favorite', String(params.isFavorite));
     if (params.protectionStatus) q.set('protection_status', params.protectionStatus);
+    if (params.cameraMake) q.set('camera_make', params.cameraMake);
+    if (params.cameraModel) q.set('camera_model', params.cameraModel);
+    if (params.lensModel) q.set('lens_model', params.lensModel);
+    if (params.extension) q.set('extension', params.extension);
+    if (params.dateFrom) q.set('date_from', params.dateFrom);
+    if (params.dateTo) q.set('date_to', params.dateTo);
+    if (params.hasGps !== undefined) q.set('has_gps', String(params.hasGps));
+    if (params.isLivePhoto !== undefined) q.set('is_live_photo', String(params.isLivePhoto));
     if (params.latMin !== undefined) q.set('lat_min', String(params.latMin));
     if (params.latMax !== undefined) q.set('lat_max', String(params.latMax));
     if (params.lonMin !== undefined) q.set('lon_min', String(params.lonMin));
@@ -344,6 +360,15 @@ export class ApiClient {
 
   public static async getTimeline() {
     return this.request<{ month_key: string; year: number; month: number; count: number }[]>('/media/timeline');
+  }
+
+  public static async getMediaFilterOptions() {
+    return this.request<{
+      makes: string[];
+      models: Array<{ make: string; model: string }>;
+      lenses: string[];
+      extensions: string[];
+    }>('/media/filters/options');
   }
 
   public static async getMapMedia() {

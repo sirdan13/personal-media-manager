@@ -19,6 +19,7 @@ erDiagram
         string email UK
         string password_hash
         string display_name
+        string thumbnail_profile
         timestamp created_at
         timestamp updated_at
     }
@@ -38,7 +39,9 @@ erDiagram
         uuid device_id FK
         string name
         string source_type
+        string role "primary | backup"
         string root_path
+        text excluded_paths
         string persistent_identifier
         string status
         timestamp created_at
@@ -54,6 +57,13 @@ erDiagram
         integer width
         integer height
         float duration_seconds
+        integer is_live_photo
+        uuid live_video_media_id FK
+        string dhash
+        float latitude
+        float longitude
+        string place_name
+        integer is_favorite
         timestamp created_at
         timestamp updated_at
     }
@@ -76,6 +86,8 @@ erDiagram
         json metadata_json
         string sha256
         string availability_status
+        text trash_relative_path
+        timestamp trashed_at
         timestamp first_indexed_at
         timestamp last_seen_at
     }
@@ -264,3 +276,22 @@ Quando una fonte viene scansionata nuovamente:
    - Viene ricalcolato l'hash SHA-256 e aggiornato il puntatore al relativo `media_id`.
 3. I file fisici non più presenti nella cartella al termine della scansione:
    - Non vengono cancellati dal database: il loro stato passa ad `availability_status = 'missing'`, preservando la storia del catalogo e segnalando chiaramente che il file non è più presente in quella posizione.
+
+---
+
+## 6. Tabelle Aggiuntive (Album, Tag, AI) e Migrazioni
+
+Oltre alle tabelle core, `backend/app/models/entities.py` definisce:
+
+| Tabella | Scopo | Chiavi / Vincoli principali |
+| :--- | :--- | :--- |
+| `albums` | Raccolte create dall'utente | `user_id` FK → `users.id` |
+| `album_media` | Associazione N:M tra album e media | `album_id`, `media_id`, `UniqueConstraint(album_id, media_id)` |
+| `tags` | Etichette personalizzate con colore hex | `user_id`, `UniqueConstraint(user_id, name)` |
+| `media_tags` | Associazione N:M tra media e tag | `media_id`, `tag_id`, `UniqueConstraint(media_id, tag_id)` |
+| `ai_settings` | Configurazione provider AI per utente (`none` / `gemini` / `ollama`), `api_key`, `allow_cloud_images`, `daily_request_cap` | `user_id` UNIQUE FK → `users.id` |
+| `ai_usage` | Conteggio giornaliero richieste e token per provider | `UniqueConstraint(user_id, day, provider)` |
+| `ai_cache` | Cache persistente risposte AI indicizzata per `cache_key` (SHA-256) | `cache_key` PK, `user_id` FK |
+
+### Migrazioni Non Distruttive (`run_db_migrations`)
+All'avvio dell'app (`backend/app/main.py`), dopo `Base.metadata.create_all(bind=engine)`, viene eseguita `run_db_migrations(engine)` definita in `backend/app/core/database.py`. Questa funzione ispeziona `PRAGMA table_info(...)` su SQLite e aggiunge automaticamente con `ALTER TABLE ... ADD COLUMN` eventuali nuove colonne mancanti su database esistenti (`users.thumbnail_profile`, campi GPS/dhash/live_photo/favorite su `media`, `sources.role`/`excluded_paths`, `files.trash_relative_path`/`trashed_at`), senza perdere dati.

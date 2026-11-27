@@ -14,7 +14,8 @@ from app.services.media_service import (
     get_timeline_buckets,
     get_map_media,
     toggle_media_favorite,
-    batch_set_favorite
+    batch_set_favorite,
+    get_media_filter_options
 )
 from app.api.deps import get_current_user, get_current_user_from_header_or_query
 from app.models.entities import User, Thumbnail, Media, File, Source
@@ -34,6 +35,14 @@ def get_media_list(
     month_key: Optional[str] = Query(None, description="Filtro per mese (YYYY-MM)"),
     is_favorite: Optional[bool] = Query(None, description="Filtro solo preferiti"),
     protection_status: Optional[str] = Query(None, description="Filtro per stato protezione (unprotected, protected, intra_source_duplicate, missing)"),
+    camera_make: Optional[str] = Query(None, description="Filtro per produttore fotocamera (es. Apple, NIKON CORPORATION)"),
+    camera_model: Optional[str] = Query(None, description="Filtro per modello fotocamera (es. iPhone 15 Pro Max)"),
+    lens_model: Optional[str] = Query(None, description="Filtro per obiettivo"),
+    extension: Optional[str] = Query(None, description="Filtro per estensione file (es. heic, nef, jpg)"),
+    date_from: Optional[str] = Query(None, description="Data inizio (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="Data fine (YYYY-MM-DD)"),
+    has_gps: Optional[bool] = Query(None, description="Filtro presenza coordinate GPS"),
+    is_live_photo: Optional[bool] = Query(None, description="Filtro solo Live Photos"),
     lat_min: Optional[float] = Query(None, description="Latitudine minima per filtro geografico"),
     lat_max: Optional[float] = Query(None, description="Latitudine massima per filtro geografico"),
     lon_min: Optional[float] = Query(None, description="Longitudine minima per filtro geografico"),
@@ -56,6 +65,14 @@ def get_media_list(
         month_key=month_key,
         is_favorite=is_favorite,
         protection_status=protection_status,
+        camera_make=camera_make,
+        camera_model=camera_model,
+        lens_model=lens_model,
+        extension=extension,
+        date_from=date_from,
+        date_to=date_to,
+        has_gps=has_gps,
+        is_live_photo=is_live_photo,
         lat_min=lat_min,
         lat_max=lat_max,
         lon_min=lon_min,
@@ -68,6 +85,13 @@ def get_media_list(
     if response is not None:
         response.headers["X-Total-Count"] = str(total_count)
     return items
+
+@router.get("/filters/options")
+def get_filter_options(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return get_media_filter_options(db, current_user.id)
 
 @router.post("/{media_id}/favorite")
 def toggle_favorite(

@@ -50,6 +50,14 @@ class MediaOut(BaseModel):
     primary_filename: Optional[str] = None
     primary_extension: Optional[str] = None
     primary_size_bytes: Optional[int] = None
+    primary_relative_path: Optional[str] = None
+    source_names: List[str] = []
+    camera_make: Optional[str] = None
+    camera_model: Optional[str] = None
+    lens_model: Optional[str] = None
+    iso: Optional[int] = None
+    f_number: Optional[float] = None
+    exposure_time: Optional[float] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

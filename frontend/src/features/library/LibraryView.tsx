@@ -23,9 +23,51 @@ import {
   Trash2,
   AlertTriangle,
   HardDrive,
-  List as ListIcon
+  List as ListIcon,
+  SlidersHorizontal,
+  Columns,
+  Camera
 } from 'lucide-react';
 import { MediaDetailModal } from './MediaDetailModal';
+
+type ListColumnKey =
+  | 'file'
+  | 'extension'
+  | 'captured_at'
+  | 'size'
+  | 'resolution'
+  | 'backup_status'
+  | 'sources'
+  | 'relative_path'
+  | 'camera_make'
+  | 'camera_model'
+  | 'lens_model'
+  | 'exif_settings'
+  | 'place_name'
+  | 'gps_coords'
+  | 'duration'
+  | 'sha256';
+
+const LIST_COLUMN_DEFS: Array<{ key: ListColumnKey; label: string; defaultVisible: boolean }> = [
+  { key: 'file', label: 'Nome File', defaultVisible: true },
+  { key: 'extension', label: 'Formato', defaultVisible: true },
+  { key: 'captured_at', label: 'Data Scatto', defaultVisible: true },
+  { key: 'size', label: 'Dimensione', defaultVisible: true },
+  { key: 'resolution', label: 'Risoluzione', defaultVisible: true },
+  { key: 'backup_status', label: 'Stato Backup', defaultVisible: true },
+  { key: 'sources', label: 'Dischi', defaultVisible: true },
+  { key: 'relative_path', label: 'Percorso su Disco', defaultVisible: true },
+  { key: 'camera_make', label: 'Produttore', defaultVisible: false },
+  { key: 'camera_model', label: 'Modello Fotocamera', defaultVisible: true },
+  { key: 'lens_model', label: 'Obiettivo', defaultVisible: false },
+  { key: 'exif_settings', label: 'Parametri Scatto (f/ · s · ISO)', defaultVisible: false },
+  { key: 'place_name', label: 'Località GPS', defaultVisible: false },
+  { key: 'gps_coords', label: 'Coordinate GPS', defaultVisible: false },
+  { key: 'duration', label: 'Durata Video', defaultVisible: false },
+  { key: 'sha256', label: 'Hash SHA-256', defaultVisible: false }
+];
+
+const DEFAULT_VISIBLE_COLUMNS: ListColumnKey[] = LIST_COLUMN_DEFS.filter((c) => c.defaultVisible).map((c) => c.key);
 
 interface LibraryViewProps {
   initialType?: string; // 'all' | 'image' | 'video'
@@ -78,6 +120,48 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   const [onlyFavorites, setOnlyFavorites] = useState<boolean>(initialFavorite);
   const [mediaType, setMediaType] = useState<string>(initialType === 'all' ? '' : initialType);
   const [protectionStatus, setProtectionStatus] = useState<string>('');
+  const [cameraMake, setCameraMake] = useState<string>('');
+  const [cameraModel, setCameraModel] = useState<string>('');
+  const [lensModel, setLensModel] = useState<string>('');
+  const [extensionFilter, setExtensionFilter] = useState<string>('');
+  const [dateFrom, setDateFrom] = useState<string>('');
+  const [dateTo, setDateTo] = useState<string>('');
+  const [hasGps, setHasGps] = useState<'' | 'yes' | 'no'>('');
+  const [onlyLivePhotos, setOnlyLivePhotos] = useState<boolean>(false);
+  const [showFiltersModal, setShowFiltersModal] = useState<boolean>(false);
+  const [filterOptions, setFilterOptions] = useState<{
+    makes: string[];
+    models: Array<{ make: string; model: string }>;
+    lenses: string[];
+    extensions: string[];
+  }>({ makes: [], models: [], lenses: [], extensions: [] });
+  const [loadingFilterOptions, setLoadingFilterOptions] = useState<boolean>(false);
+
+  const [visibleColumns, setVisibleColumns] = useState<ListColumnKey[]>(() => {
+    try {
+      const saved = localStorage.getItem('pmm_list_columns');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return DEFAULT_VISIBLE_COLUMNS;
+  });
+  const [showColumnsPopover, setShowColumnsPopover] = useState<boolean>(false);
+  useEffect(() => {
+    localStorage.setItem('pmm_list_columns', JSON.stringify(visibleColumns));
+  }, [visibleColumns]);
+
+  const toggleColumn = (key: ListColumnKey) => {
+    setVisibleColumns((prev) =>
+      prev.includes(key)
+        ? (prev.length > 1 ? prev.filter((k) => k !== key) : prev)
+        : [...prev, key]
+    );
+  };
+
   const [search, setSearch] = useState<string>('');
   const [debouncedSearch, setDebouncedSearch] = useState<string>('');
   const [totalCount, setTotalCount] = useState<number | null>(null);
@@ -192,6 +276,17 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     ApiClient.getTimeline().then(setTimelineBuckets).catch(() => setTimelineBuckets([]));
   }, []);
 
+  // Load distinct EXIF/extension filter options lazily when Advanced Filters modal opens
+  useEffect(() => {
+    if (!showFiltersModal || !ApiClient.getToken()) return;
+    if (filterOptions.makes.length > 0 || filterOptions.extensions.length > 0) return;
+    setLoadingFilterOptions(true);
+    ApiClient.getMediaFilterOptions()
+      .then(setFilterOptions)
+      .catch(() => {})
+      .finally(() => setLoadingFilterOptions(false));
+  }, [showFiltersModal]);
+
   // Debounce search input by 300ms
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -229,6 +324,14 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           monthKey: selectedMonthKey || undefined,
           isFavorite: onlyFavorites ? true : undefined,
           protectionStatus: protectionStatus || undefined,
+          cameraMake: cameraMake || undefined,
+          cameraModel: cameraModel || undefined,
+          lensModel: lensModel || undefined,
+          extension: extensionFilter || undefined,
+          dateFrom: dateFrom || undefined,
+          dateTo: dateTo || undefined,
+          hasGps: hasGps === 'yes' ? true : (hasGps === 'no' ? false : undefined),
+          isLivePhoto: onlyLivePhotos ? true : undefined,
           latMin: geoFilter?.latMin,
           latMax: geoFilter?.latMax,
           lonMin: geoFilter?.lonMin,
@@ -257,7 +360,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
     fetchMedia();
     return () => controller.abort();
-  }, [mediaType, selectedSource, selectedFolder, debouncedSearch, selectedAlbum, selectedTag, selectedMonthKey, onlyFavorites, protectionStatus, geoFilter, sortBy, offset, effectiveLimit, reloadTick]);
+  }, [mediaType, selectedSource, selectedFolder, debouncedSearch, selectedAlbum, selectedTag, selectedMonthKey, onlyFavorites, protectionStatus, cameraMake, cameraModel, lensModel, extensionFilter, dateFrom, dateTo, hasGps, onlyLivePhotos, geoFilter, sortBy, offset, effectiveLimit, reloadTick]);
 
   const handleFilterChange = () => {
     setOffset(0);
@@ -1312,7 +1415,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           </div>
 
           {/* Grid Zoom Slider (only in grid/timeline modes) */}
-          {viewMode !== 'list' && (
+          {viewMode !== 'list' ? (
           <div
             title={`Dimensione miniature: ${gridSize}px`}
             style={{
@@ -1351,9 +1454,218 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               +
             </button>
           </div>
+          ) : (
+            /* Column Chooser Button + Popover in List Mode */
+            <div style={{ position: 'relative' }}>
+              <button
+                type="button"
+                onClick={() => setShowColumnsPopover((v) => !v)}
+                style={{
+                  background: showColumnsPopover ? 'rgba(56, 189, 248, 0.2)' : '#0f172a',
+                  border: showColumnsPopover ? '1px solid #38bdf8' : '1px solid #334155',
+                  color: showColumnsPopover ? '#38bdf8' : '#cbd5e1',
+                  borderRadius: '8px',
+                  padding: '7px 12px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  cursor: 'pointer'
+                }}
+              >
+                <Columns size={13} /> Colonne ({visibleColumns.length})
+              </button>
+
+              {showColumnsPopover && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 8px)',
+                    right: 0,
+                    width: '280px',
+                    background: '#0f172a',
+                    border: '1px solid #334155',
+                    borderRadius: '12px',
+                    padding: '12px',
+                    boxShadow: '0 20px 35px rgba(0,0,0,0.65)',
+                    zIndex: 500,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: '#f8fafc' }}>Colonne visibili</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowColumnsPopover(false)}
+                      style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '2px' }}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+
+                  {/* Quick Presets */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setVisibleColumns(DEFAULT_VISIBLE_COLUMNS)}
+                      style={{ fontSize: '10px', padding: '3px 7px', borderRadius: '5px', background: '#1e293b', border: '1px solid #334155', color: '#cbd5e1', cursor: 'pointer' }}
+                    >
+                      Default
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVisibleColumns(['file', 'extension', 'captured_at', 'camera_make', 'camera_model', 'lens_model', 'exif_settings', 'resolution'])}
+                      style={{ fontSize: '10px', padding: '3px 7px', borderRadius: '5px', background: '#1e293b', border: '1px solid #334155', color: '#38bdf8', cursor: 'pointer' }}
+                    >
+                      Fotografo (EXIF)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVisibleColumns(['file', 'extension', 'size', 'backup_status', 'sources', 'relative_path', 'sha256'])}
+                      style={{ fontSize: '10px', padding: '3px 7px', borderRadius: '5px', background: '#1e293b', border: '1px solid #334155', color: '#4ade80', cursor: 'pointer' }}
+                    >
+                      Gestione Dischi
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVisibleColumns(LIST_COLUMN_DEFS.map((c) => c.key))}
+                      style={{ fontSize: '10px', padding: '3px 7px', borderRadius: '5px', background: '#1e293b', border: '1px solid #334155', color: '#f59e0b', cursor: 'pointer' }}
+                    >
+                      Tutte
+                    </button>
+                  </div>
+
+                  <div style={{ maxHeight: '260px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {LIST_COLUMN_DEFS.map((col) => {
+                      const checked = visibleColumns.includes(col.key);
+                      return (
+                        <label
+                          key={col.key}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '4px 6px',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '12px',
+                            color: checked ? '#f8fafc' : '#94a3b8',
+                            background: checked ? 'rgba(56, 189, 248, 0.08)' : 'transparent'
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleColumn(col.key)}
+                            style={{ accentColor: '#38bdf8' }}
+                          />
+                          <span>{col.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
+
+          {/* Advanced Filters Modal Button */}
+          {(() => {
+            const advCount = [cameraMake, cameraModel, lensModel, extensionFilter, dateFrom, dateTo, hasGps, onlyLivePhotos ? '1' : ''].filter(Boolean).length;
+            return (
+              <button
+                type="button"
+                onClick={() => setShowFiltersModal(true)}
+                style={{
+                  background: advCount > 0 ? 'rgba(168, 85, 247, 0.2)' : '#0f172a',
+                  border: advCount > 0 ? '1px solid #a855f7' : '1px solid #334155',
+                  color: advCount > 0 ? '#e9d5ff' : '#cbd5e1',
+                  borderRadius: '8px',
+                  padding: '7px 12px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  cursor: 'pointer'
+                }}
+              >
+                <SlidersHorizontal size={13} color={advCount > 0 ? '#c084fc' : '#94a3b8'} />
+                Filtri Avanzati
+                {advCount > 0 && (
+                  <span style={{
+                    background: '#a855f7',
+                    color: 'white',
+                    borderRadius: '999px',
+                    padding: '1px 6px',
+                    fontSize: '10px',
+                    fontWeight: 700
+                  }}>
+                    {advCount}
+                  </span>
+                )}
+              </button>
+            );
+          })()}
         </div>
       </div>
+
+      {/* Active Advanced Filter Chips */}
+      {(cameraMake || cameraModel || lensModel || extensionFilter || dateFrom || dateTo || hasGps || onlyLivePhotos || selectedFolder) && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+          {cameraMake && (
+            <span style={{ fontSize: '11px', background: 'rgba(168, 85, 247, 0.16)', border: '1px solid rgba(168, 85, 247, 0.45)', color: '#e9d5ff', padding: '4px 10px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <Camera size={12} /> Produttore: <strong>{cameraMake}</strong>
+              <button type="button" onClick={() => { setCameraMake(''); handleFilterChange(); }} style={{ background: 'transparent', border: 'none', color: '#e9d5ff', cursor: 'pointer', padding: 0, display: 'inline-flex' }}><X size={12} /></button>
+            </span>
+          )}
+          {cameraModel && (
+            <span style={{ fontSize: '11px', background: 'rgba(56, 189, 248, 0.16)', border: '1px solid rgba(56, 189, 248, 0.45)', color: '#bae6fd', padding: '4px 10px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              Modello: <strong>{cameraModel}</strong>
+              <button type="button" onClick={() => { setCameraModel(''); handleFilterChange(); }} style={{ background: 'transparent', border: 'none', color: '#bae6fd', cursor: 'pointer', padding: 0, display: 'inline-flex' }}><X size={12} /></button>
+            </span>
+          )}
+          {lensModel && (
+            <span style={{ fontSize: '11px', background: 'rgba(56, 189, 248, 0.16)', border: '1px solid rgba(56, 189, 248, 0.45)', color: '#bae6fd', padding: '4px 10px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              Obiettivo: <strong>{lensModel}</strong>
+              <button type="button" onClick={() => { setLensModel(''); handleFilterChange(); }} style={{ background: 'transparent', border: 'none', color: '#bae6fd', cursor: 'pointer', padding: 0, display: 'inline-flex' }}><X size={12} /></button>
+            </span>
+          )}
+          {extensionFilter && (
+            <span style={{ fontSize: '11px', background: 'rgba(245, 158, 11, 0.16)', border: '1px solid rgba(245, 158, 11, 0.45)', color: '#fde68a', padding: '4px 10px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              Formato: <strong>.{extensionFilter.toUpperCase()}</strong>
+              <button type="button" onClick={() => { setExtensionFilter(''); handleFilterChange(); }} style={{ background: 'transparent', border: 'none', color: '#fde68a', cursor: 'pointer', padding: 0, display: 'inline-flex' }}><X size={12} /></button>
+            </span>
+          )}
+          {selectedFolder && (
+            <span style={{ fontSize: '11px', background: 'rgba(34, 197, 94, 0.16)', border: '1px solid rgba(34, 197, 94, 0.45)', color: '#bbf7d0', padding: '4px 10px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              Cartella: <strong>{selectedFolder}</strong>
+              <button type="button" onClick={() => { setSelectedFolder(''); handleFilterChange(); }} style={{ background: 'transparent', border: 'none', color: '#bbf7d0', cursor: 'pointer', padding: 0, display: 'inline-flex' }}><X size={12} /></button>
+            </span>
+          )}
+          {(dateFrom || dateTo) && (
+            <span style={{ fontSize: '11px', background: 'rgba(56, 189, 248, 0.16)', border: '1px solid rgba(56, 189, 248, 0.45)', color: '#bae6fd', padding: '4px 10px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              Periodo: <strong>{dateFrom || '...'} → {dateTo || '...'}</strong>
+              <button type="button" onClick={() => { setDateFrom(''); setDateTo(''); handleFilterChange(); }} style={{ background: 'transparent', border: 'none', color: '#bae6fd', cursor: 'pointer', padding: 0, display: 'inline-flex' }}><X size={12} /></button>
+            </span>
+          )}
+          {hasGps && (
+            <span style={{ fontSize: '11px', background: 'rgba(16, 185, 129, 0.16)', border: '1px solid rgba(16, 185, 129, 0.45)', color: '#a7f3d0', padding: '4px 10px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              GPS: <strong>{hasGps === 'yes' ? 'Con posizione' : 'Senza GPS'}</strong>
+              <button type="button" onClick={() => { setHasGps(''); handleFilterChange(); }} style={{ background: 'transparent', border: 'none', color: '#a7f3d0', cursor: 'pointer', padding: 0, display: 'inline-flex' }}><X size={12} /></button>
+            </span>
+          )}
+          {onlyLivePhotos && (
+            <span style={{ fontSize: '11px', background: 'rgba(6, 182, 212, 0.16)', border: '1px solid rgba(6, 182, 212, 0.45)', color: '#a5f3fc', padding: '4px 10px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              Solo Live Photos
+              <button type="button" onClick={() => { setOnlyLivePhotos(false); handleFilterChange(); }} style={{ background: 'transparent', border: 'none', color: '#a5f3fc', cursor: 'pointer', padding: 0, display: 'inline-flex' }}><X size={12} /></button>
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Floating Batch Action Bar: Fixed overlay floating at bottom, ZERO layout shift */}
       {selectedIds.size > 0 && (
@@ -1741,7 +2053,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             ))}
           </div>
         ) : viewMode === 'list' ? (
-          /* High-Density File List View (Zero Thumbnail Preloading) */
+          /* High-Density Configurable File List View (Zero Thumbnail Preloading) */
           <div style={{
             background: '#1e293b',
             border: '1px solid #334155',
@@ -1762,12 +2074,22 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                       {selectedIds.size === mediaList.length && mediaList.length > 0 ? <CheckSquare size={15} /> : <Square size={15} />}
                     </button>
                   </th>
-                  <th style={{ padding: '10px 12px' }}>File</th>
-                  <th style={{ padding: '10px 10px' }}>Formato</th>
-                  <th style={{ padding: '10px 10px' }}>Data</th>
-                  <th style={{ padding: '10px 10px' }}>Dimensione</th>
-                  <th style={{ padding: '10px 10px' }}>Risoluzione</th>
-                  <th style={{ padding: '10px 10px' }}>Stato Backup</th>
+                  {visibleColumns.includes('file') && <th style={{ padding: '10px 12px' }}>File</th>}
+                  {visibleColumns.includes('extension') && <th style={{ padding: '10px 10px' }}>Formato</th>}
+                  {visibleColumns.includes('captured_at') && <th style={{ padding: '10px 10px' }}>Data Scatto</th>}
+                  {visibleColumns.includes('size') && <th style={{ padding: '10px 10px' }}>Dimensione</th>}
+                  {visibleColumns.includes('resolution') && <th style={{ padding: '10px 10px' }}>Risoluzione</th>}
+                  {visibleColumns.includes('backup_status') && <th style={{ padding: '10px 10px' }}>Stato Backup</th>}
+                  {visibleColumns.includes('sources') && <th style={{ padding: '10px 10px' }}>Dischi</th>}
+                  {visibleColumns.includes('relative_path') && <th style={{ padding: '10px 10px' }}>Percorso su Disco</th>}
+                  {visibleColumns.includes('camera_make') && <th style={{ padding: '10px 10px' }}>Produttore</th>}
+                  {visibleColumns.includes('camera_model') && <th style={{ padding: '10px 10px' }}>Modello</th>}
+                  {visibleColumns.includes('lens_model') && <th style={{ padding: '10px 10px' }}>Obiettivo</th>}
+                  {visibleColumns.includes('exif_settings') && <th style={{ padding: '10px 10px' }}>Parametri Scatto</th>}
+                  {visibleColumns.includes('place_name') && <th style={{ padding: '10px 10px' }}>Località</th>}
+                  {visibleColumns.includes('gps_coords') && <th style={{ padding: '10px 10px' }}>GPS</th>}
+                  {visibleColumns.includes('duration') && <th style={{ padding: '10px 10px' }}>Durata</th>}
+                  {visibleColumns.includes('sha256') && <th style={{ padding: '10px 10px' }}>SHA-256</th>}
                   <th style={{ padding: '10px 12px', textAlign: 'right' }}>Azioni</th>
                 </tr>
               </thead>
@@ -1797,6 +2119,13 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                         ? 'rgba(245, 158, 11, 0.12)'
                         : 'rgba(244, 63, 94, 0.12)';
 
+                  const exifParts: string[] = [];
+                  if (media.f_number) exifParts.push(`f/${media.f_number}`);
+                  if (media.exposure_time) {
+                    exifParts.push(media.exposure_time < 1 ? `1/${Math.round(1 / media.exposure_time)}s` : `${media.exposure_time}s`);
+                  }
+                  if (media.iso) exifParts.push(`ISO ${media.iso}`);
+
                   return (
                     <tr
                       key={media.id}
@@ -1822,47 +2151,104 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                           {isSelected ? <CheckSquare size={15} /> : <Square size={15} />}
                         </span>
                       </td>
-                      <td style={{ padding: '8px 12px', maxWidth: '340px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          {media.media_type === 'video' ? (
-                            <Video size={15} color="#a855f7" style={{ flexShrink: 0 }} />
-                          ) : (
-                            <Image size={15} color="#38bdf8" style={{ flexShrink: 0 }} />
-                          )}
-                          <span style={{ fontWeight: 600, color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {media.primary_filename || 'File senza nome'}
-                          </span>
-                          {media.place_name && (
-                            <span style={{ fontSize: '11px', color: '#38bdf8', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
-                              <MapPin size={10} /> {media.place_name}
+                      {visibleColumns.includes('file') && (
+                        <td style={{ padding: '8px 12px', maxWidth: '280px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {media.media_type === 'video' ? (
+                              <Video size={15} color="#a855f7" style={{ flexShrink: 0 }} />
+                            ) : (
+                              <Image size={15} color="#38bdf8" style={{ flexShrink: 0 }} />
+                            )}
+                            <span style={{ fontWeight: 600, color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {media.primary_filename || 'File senza nome'}
                             </span>
-                          )}
-                        </div>
-                      </td>
-                      <td style={{ padding: '8px 10px', color: '#94a3b8', fontSize: '11px', fontWeight: 600 }}>
-                        {ext}
-                      </td>
-                      <td style={{ padding: '8px 10px', color: '#cbd5e1', fontSize: '12px', whiteSpace: 'nowrap' }}>
-                        {media.captured_at ? new Date(media.captured_at).toLocaleDateString() : 'N/D'}
-                      </td>
-                      <td style={{ padding: '8px 10px', color: '#cbd5e1', fontSize: '12px', whiteSpace: 'nowrap' }}>
-                        {formatBytes(media.primary_size_bytes)}
-                      </td>
-                      <td style={{ padding: '8px 10px', color: '#94a3b8', fontSize: '12px', whiteSpace: 'nowrap' }}>
-                        {media.width && media.height ? `${media.width} × ${media.height}` : '—'}
-                      </td>
-                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
-                        <span style={{
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          color: protColor,
-                          background: protBg,
-                          padding: '2px 8px',
-                          borderRadius: '6px'
-                        }}>
-                          {protLabel}
-                        </span>
-                      </td>
+                          </div>
+                        </td>
+                      )}
+                      {visibleColumns.includes('extension') && (
+                        <td style={{ padding: '8px 10px', color: '#94a3b8', fontSize: '11px', fontWeight: 600 }}>
+                          {ext}
+                        </td>
+                      )}
+                      {visibleColumns.includes('captured_at') && (
+                        <td style={{ padding: '8px 10px', color: '#cbd5e1', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                          {media.captured_at ? new Date(media.captured_at).toLocaleDateString() : 'N/D'}
+                        </td>
+                      )}
+                      {visibleColumns.includes('size') && (
+                        <td style={{ padding: '8px 10px', color: '#cbd5e1', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                          {formatBytes(media.primary_size_bytes)}
+                        </td>
+                      )}
+                      {visibleColumns.includes('resolution') && (
+                        <td style={{ padding: '8px 10px', color: '#94a3b8', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                          {media.width && media.height ? `${media.width} × ${media.height}` : '—'}
+                        </td>
+                      )}
+                      {visibleColumns.includes('backup_status') && (
+                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                          <span style={{
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            color: protColor,
+                            background: protBg,
+                            padding: '2px 8px',
+                            borderRadius: '6px'
+                          }}>
+                            {protLabel}
+                          </span>
+                        </td>
+                      )}
+                      {visibleColumns.includes('sources') && (
+                        <td style={{ padding: '8px 10px', color: '#cbd5e1', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                          {media.source_names && media.source_names.length > 0 ? media.source_names.join(', ') : '—'}
+                        </td>
+                      )}
+                      {visibleColumns.includes('relative_path') && (
+                        <td style={{ padding: '8px 10px', color: '#94a3b8', fontSize: '11px', fontFamily: 'monospace', maxWidth: '280px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={media.primary_relative_path || ''}>
+                          {media.primary_relative_path || '—'}
+                        </td>
+                      )}
+                      {visibleColumns.includes('camera_make') && (
+                        <td style={{ padding: '8px 10px', color: '#cbd5e1', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                          {media.camera_make || '—'}
+                        </td>
+                      )}
+                      {visibleColumns.includes('camera_model') && (
+                        <td style={{ padding: '8px 10px', color: '#38bdf8', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                          {media.camera_model || '—'}
+                        </td>
+                      )}
+                      {visibleColumns.includes('lens_model') && (
+                        <td style={{ padding: '8px 10px', color: '#94a3b8', fontSize: '11px', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={media.lens_model || ''}>
+                          {media.lens_model || '—'}
+                        </td>
+                      )}
+                      {visibleColumns.includes('exif_settings') && (
+                        <td style={{ padding: '8px 10px', color: '#94a3b8', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                          {exifParts.length > 0 ? exifParts.join(' · ') : '—'}
+                        </td>
+                      )}
+                      {visibleColumns.includes('place_name') && (
+                        <td style={{ padding: '8px 10px', color: '#38bdf8', fontSize: '12px', maxWidth: '220px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {media.place_name || '—'}
+                        </td>
+                      )}
+                      {visibleColumns.includes('gps_coords') && (
+                        <td style={{ padding: '8px 10px', color: '#94a3b8', fontSize: '11px', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+                          {media.latitude != null && media.longitude != null ? `${Number(media.latitude).toFixed(4)}, ${Number(media.longitude).toFixed(4)}` : '—'}
+                        </td>
+                      )}
+                      {visibleColumns.includes('duration') && (
+                        <td style={{ padding: '8px 10px', color: '#94a3b8', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                          {media.duration_seconds ? `${Math.floor(media.duration_seconds / 60)}:${String(Math.floor(media.duration_seconds % 60)).padStart(2, '0')}` : '—'}
+                        </td>
+                      )}
+                      {visibleColumns.includes('sha256') && (
+                        <td style={{ padding: '8px 10px', color: '#64748b', fontSize: '11px', fontFamily: 'monospace', whiteSpace: 'nowrap' }} title={media.canonical_sha256}>
+                          {media.canonical_sha256 ? `${media.canonical_sha256.slice(0, 12)}…` : '—'}
+                        </td>
+                      )}
                       <td style={{ padding: '8px 12px', textAlign: 'right', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                           <button
@@ -2105,6 +2491,236 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           >
             {loading ? 'Caricamento in corso...' : 'Carica altri elementi'}
           </button>
+        </div>
+      )}
+
+      {/* Modal for Advanced Filters */}
+      {showFiltersModal && (
+        <div
+          className="modal-overlay"
+          onClick={() => setShowFiltersModal(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.8)',
+            backdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1050,
+            padding: '20px'
+          }}
+        >
+          <div
+            className="modal-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#1e293b',
+              border: '1px solid #334155',
+              borderRadius: '16px',
+              width: '100%',
+              maxWidth: '760px',
+              maxHeight: '88vh',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #334155' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <SlidersHorizontal size={18} color="#a855f7" />
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#f8fafc' }}>
+                  Filtri Avanzati & Dispositivi
+                </h3>
+                {loadingFilterOptions && (
+                  <span style={{ fontSize: '11px', color: '#94a3b8' }}>Caricamento opzioni dal DB...</span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFiltersModal(false)}
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ padding: '20px', overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+              {/* Produttore */}
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>
+                  Produttore Fotocamera / Telefono
+                </label>
+                <select
+                  value={cameraMake}
+                  onChange={(e) => { setCameraMake(e.target.value); setCameraModel(''); handleFilterChange(); }}
+                  style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', padding: '8px 10px', color: 'white', fontSize: '13px' }}
+                >
+                  <option value="">Tutti i produttori ({filterOptions.makes.length})</option>
+                  {filterOptions.makes.map((mk) => (
+                    <option key={mk} value={mk}>{mk}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Modello */}
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>
+                  Modello Dispositivo
+                </label>
+                <select
+                  value={cameraModel}
+                  onChange={(e) => { setCameraModel(e.target.value); handleFilterChange(); }}
+                  style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', padding: '8px 10px', color: 'white', fontSize: '13px' }}
+                >
+                  <option value="">Tutti i modelli</option>
+                  {filterOptions.models
+                    .filter((m) => !cameraMake || m.make.toLowerCase() === cameraMake.toLowerCase())
+                    .map((m) => (
+                      <option key={`${m.make}-${m.model}`} value={m.model}>
+                        {m.model}{!cameraMake && m.make ? ` (${m.make})` : ''}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              {/* Obiettivo */}
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>
+                  Obiettivo / Lente
+                </label>
+                <select
+                  value={lensModel}
+                  onChange={(e) => { setLensModel(e.target.value); handleFilterChange(); }}
+                  style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', padding: '8px 10px', color: 'white', fontSize: '13px' }}
+                >
+                  <option value="">Tutti gli obiettivi ({filterOptions.lenses.length})</option>
+                  {filterOptions.lenses.map((ln) => (
+                    <option key={ln} value={ln}>{ln}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Estensione */}
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>
+                  Estensione File
+                </label>
+                <select
+                  value={extensionFilter}
+                  onChange={(e) => { setExtensionFilter(e.target.value); handleFilterChange(); }}
+                  style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', padding: '8px 10px', color: 'white', fontSize: '13px' }}
+                >
+                  <option value="">Tutte le estensioni</option>
+                  {filterOptions.extensions.map((ext) => (
+                    <option key={ext} value={ext}>.{ext.toUpperCase()}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Data Da */}
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>
+                  Data Scatto Da
+                </label>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => { setDateFrom(e.target.value); handleFilterChange(); }}
+                  style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', padding: '8px 10px', color: 'white', fontSize: '13px' }}
+                />
+              </div>
+
+              {/* Data A */}
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>
+                  Data Scatto A
+                </label>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => { setDateTo(e.target.value); handleFilterChange(); }}
+                  style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', padding: '8px 10px', color: 'white', fontSize: '13px' }}
+                />
+              </div>
+
+              {/* GPS */}
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>
+                  Coordinate GPS
+                </label>
+                <select
+                  value={hasGps}
+                  onChange={(e) => { setHasGps(e.target.value as '' | 'yes' | 'no'); handleFilterChange(); }}
+                  style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', padding: '8px 10px', color: 'white', fontSize: '13px' }}
+                >
+                  <option value="">Tutti (con e senza GPS)</option>
+                  <option value="yes">Solo con posizione GPS</option>
+                  <option value="no">Solo senza GPS</option>
+                </select>
+              </div>
+
+              {/* Live Photos */}
+              <div style={{ display: 'flex', alignItems: 'center', paddingTop: '20px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: '#e2e8f0', fontWeight: 600 }}>
+                  <input
+                    type="checkbox"
+                    checked={onlyLivePhotos}
+                    onChange={(e) => { setOnlyLivePhotos(e.target.checked); handleFilterChange(); }}
+                    style={{ accentColor: '#06b6d4', width: '16px', height: '16px' }}
+                  />
+                  Solo Live Photos (Apple)
+                </label>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', borderTop: '1px solid #334155', background: '#0f172a' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setCameraMake('');
+                  setCameraModel('');
+                  setLensModel('');
+                  setExtensionFilter('');
+                  setDateFrom('');
+                  setDateTo('');
+                  setHasGps('');
+                  setOnlyLivePhotos(false);
+                  setSelectedFolder('');
+                  handleFilterChange();
+                }}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid #475569',
+                  color: '#cbd5e1',
+                  borderRadius: '8px',
+                  padding: '8px 14px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Ripristina Filtri Avanzati
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowFiltersModal(false)}
+                style={{
+                  background: '#0284c7',
+                  border: 'none',
+                  color: 'white',
+                  borderRadius: '8px',
+                  padding: '8px 20px',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                Applica e Chiudi
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

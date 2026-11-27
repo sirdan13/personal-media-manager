@@ -1,3 +1,5 @@
+import json
+from datetime import datetime
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, asc, and_, or_, exists
@@ -26,6 +28,31 @@ def compute_protection_status(copies_count: int, distinct_sources_count: int) ->
         return "protected"
     return "unprotected"
 
+def _extract_exif_summary(meta_str: Optional[str]) -> Dict[str, Any]:
+    if not meta_str:
+        return {}
+    try:
+        m = json.loads(meta_str)
+        if not isinstance(m, dict):
+            return {}
+        iso_raw = m.get("iso") if m.get("iso") is not None else m.get("ISOSpeedRatings")
+        iso_val = int(float(iso_raw)) if iso_raw is not None else None
+        f_raw = m.get("fNumber") if m.get("fNumber") is not None else m.get("FNumber")
+        f_val = float(f_raw) if f_raw is not None else None
+        exp_raw = m.get("exposureTime") if m.get("exposureTime") is not None else m.get("ExposureTime")
+        exp_val = float(exp_raw) if exp_raw is not None else None
+        return {
+            "camera_make": (m.get("make") or m.get("Make") or None),
+            "camera_model": (m.get("model") or m.get("Model") or None),
+            "lens_model": (m.get("lensModel") or m.get("LensModel") or None),
+            "iso": iso_val,
+            "f_number": f_val,
+            "exposure_time": exp_val,
+        }
+    except Exception:
+        return {}
+
+
 def list_user_media(
     db: Session,
     user_id: str,
@@ -42,6 +69,14 @@ def list_user_media(
     lon_max: Optional[float] = None,
     is_favorite: Optional[bool] = None,
     protection_status: Optional[str] = None,
+    camera_make: Optional[str] = None,
+    camera_model: Optional[str] = None,
+    lens_model: Optional[str] = None,
+    extension: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    has_gps: Optional[bool] = None,
+    is_live_photo: Optional[bool] = None,
     sort_by: str = "date_desc",
     offset: int = 0,
     limit: int = 50,
@@ -65,7 +100,9 @@ def list_user_media(
         func.count(func.distinct(Thumbnail.id)).label("thumb_count"),
         func.min(File.filename).label("primary_filename"),
         func.min(File.extension).label("primary_extension"),
-        func.max(File.size_bytes).label("primary_size")
+        func.max(File.size_bytes).label("primary_size"),
+        func.min(File.relative_path).label("primary_relative_path"),
+        func.min(File.metadata_json).label("primary_metadata_json")
     ).outerjoin(prot_global, Media.id == prot_global.c.m_id)\
      .outerjoin(File, Media.id == File.media_id)\
      .outerjoin(Thumbnail, Media.id == Thumbnail.media_id)\
@@ -136,6 +173,58 @@ def list_user_media(
     if lon_min is not None and lon_max is not None:
         query = query.filter(Media.longitude >= lon_min, Media.longitude <= lon_max)
 
+    if camera_make:
+        make_expr = func.lower(func.coalesce(
+            func.json_extract(File.metadata_json, "$.make"),
+            func.json_extract(File.metadata_json, "$.Make")
+        ))
+        query = query.filter(make_expr == camera_make.strip().lower())
+
+    if camera_model:
+        model_expr = func.lower(func.coalesce(
+            func.json_extract(File.metadata_json, "$.model"),
+            func.json_extract(File.metadata_json, "$.Model")
+        ))
+        query = query.filter(model_expr == camera_model.strip().lower())
+
+    if lens_model:
+        lens_expr = func.lower(func.coalesce(
+            func.json_extract(File.metadata_json, "$.lensModel"),
+            func.json_extract(File.metadata_json, "$.LensModel")
+        ))
+        query = query.filter(lens_expr == lens_model.strip().lower())
+
+    if extension:
+        clean_ext = extension.strip().lstrip(".").lower()
+        query = query.filter(func.lower(func.ltrim(File.extension, ".")) == clean_ext)
+
+    if date_from:
+        try:
+            dt_from = datetime.fromisoformat(date_from.strip())
+            query = query.filter(func.coalesce(Media.captured_at, Media.created_at) >= dt_from)
+        except ValueError:
+            pass
+
+    if date_to:
+        try:
+            dt_str = date_to.strip()
+            if len(dt_str) == 10:
+                dt_str += "T23:59:59"
+            dt_to = datetime.fromisoformat(dt_str)
+            query = query.filter(func.coalesce(Media.captured_at, Media.created_at) <= dt_to)
+        except ValueError:
+            pass
+
+    if has_gps is True:
+        query = query.filter(Media.latitude.isnot(None), Media.longitude.isnot(None))
+    elif has_gps is False:
+        query = query.filter(or_(Media.latitude.is_(None), Media.longitude.is_(None)))
+
+    if is_live_photo is True:
+        query = query.filter(Media.is_live_photo == 1)
+    elif is_live_photo is False:
+        query = query.filter(Media.is_live_photo == 0)
+
     if protection_status == "missing":
         from sqlalchemy.orm import aliased
         FileMissing = aliased(File)
@@ -179,11 +268,30 @@ def list_user_media(
 
     rows = query.offset(offset).limit(limit).all()
 
+    # Batch fetch active source names per media_id for the current page
+    page_media_ids = [r[0].id for r in rows]
+    sources_by_media: Dict[str, List[str]] = {}
+    if page_media_ids:
+        src_rows = (
+            db.query(File.media_id, Source.name)
+            .join(Source, File.source_id == Source.id)
+            .filter(
+                File.media_id.in_(page_media_ids),
+                File.availability_status.notin_(INACTIVE_FILE_STATUSES)
+            )
+            .distinct()
+            .all()
+        )
+        for m_id, s_name in src_rows:
+            if s_name:
+                sources_by_media.setdefault(m_id, []).append(s_name)
+
     results = []
-    for media, copies_count, distinct_sources_count, thumb_count, p_filename, p_extension, p_size in rows:
+    for media, copies_count, distinct_sources_count, thumb_count, p_filename, p_extension, p_size, p_rel_path, p_meta_json in rows:
         c_count = int(copies_count or 0)
         s_count = int(distinct_sources_count or 0)
         prot_status = compute_protection_status(c_count, s_count)
+        exif_info = _extract_exif_summary(p_meta_json)
         results.append(MediaOut(
             id=media.id,
             user_id=media.user_id,
@@ -207,11 +315,89 @@ def list_user_media(
             primary_filename=p_filename,
             primary_extension=p_extension,
             primary_size_bytes=p_size,
+            primary_relative_path=p_rel_path,
+            source_names=sorted(sources_by_media.get(media.id, [])),
+            camera_make=exif_info.get("camera_make"),
+            camera_model=exif_info.get("camera_model"),
+            lens_model=exif_info.get("lens_model"),
+            iso=exif_info.get("iso"),
+            f_number=exif_info.get("f_number"),
+            exposure_time=exif_info.get("exposure_time"),
             created_at=media.created_at
         ))
     if include_total:
         return results, total_count
     return results
+
+def get_media_filter_options(db: Session, user_id: str) -> Dict[str, Any]:
+    """
+    Returns distinct camera makes, models, lenses, and file extensions present in the user's catalog.
+    """
+    make_col = func.coalesce(
+        func.json_extract(File.metadata_json, "$.make"),
+        func.json_extract(File.metadata_json, "$.Make")
+    )
+    model_col = func.coalesce(
+        func.json_extract(File.metadata_json, "$.model"),
+        func.json_extract(File.metadata_json, "$.Model")
+    )
+    lens_col = func.coalesce(
+        func.json_extract(File.metadata_json, "$.lensModel"),
+        func.json_extract(File.metadata_json, "$.LensModel")
+    )
+
+    exif_rows = (
+        db.query(make_col, model_col, lens_col)
+        .join(Media, File.media_id == Media.id)
+        .filter(
+            Media.user_id == user_id,
+            File.availability_status.notin_(INACTIVE_FILE_STATUSES),
+            File.metadata_json.isnot(None)
+        )
+        .distinct()
+        .all()
+    )
+
+    makes_set = set()
+    models_map: Dict[str, str] = {}
+    lenses_set = set()
+
+    for mk, md, ln in exif_rows:
+        mk_s = str(mk).strip() if mk else ""
+        md_s = str(md).strip() if md else ""
+        ln_s = str(ln).strip() if ln else ""
+        if mk_s:
+            makes_set.add(mk_s)
+        if md_s:
+            if md_s not in models_map or (mk_s and not models_map[md_s]):
+                models_map[md_s] = mk_s
+        if ln_s:
+            lenses_set.add(ln_s)
+
+    ext_rows = (
+        db.query(func.lower(func.ltrim(File.extension, ".")))
+        .join(Media, File.media_id == Media.id)
+        .filter(
+            Media.user_id == user_id,
+            File.availability_status.notin_(INACTIVE_FILE_STATUSES),
+            File.extension.isnot(None)
+        )
+        .distinct()
+        .all()
+    )
+    extensions = sorted({str(r[0]).lower() for r in ext_rows if r[0]})
+
+    models = [
+        {"make": mk, "model": md}
+        for md, mk in sorted(models_map.items(), key=lambda x: (x[1].lower(), x[0].lower()))
+    ]
+
+    return {
+        "makes": sorted(makes_set, key=lambda x: x.lower()),
+        "models": models,
+        "lenses": sorted(lenses_set, key=lambda x: x.lower()),
+        "extensions": extensions
+    }
 
 def get_media_detail(db: Session, user_id: str, media_id: str) -> MediaDetailOut:
     media = db.query(Media).filter(Media.id == media_id, Media.user_id == user_id).first()
